@@ -31,7 +31,10 @@ import { buildAllEnglishPrompts } from "@/lib/prompts/scenario";
 
 interface GenerateStepProps {
   project: Partial<StoryProject>;
+  referenceImageUrl?: string;
   onBack: () => void;
+  onNext: () => void;
+  onVideosGenerated?: (videos: { sceneId: string; videoUrl: string }[]) => void;
 }
 
 type ClipStatus = "pending" | "generating" | "completed" | "failed";
@@ -44,7 +47,13 @@ interface ClipResult {
   error?: string;
 }
 
-export function GenerateStep({ project, onBack }: GenerateStepProps) {
+export function GenerateStep({
+  project,
+  referenceImageUrl,
+  onBack,
+  onNext,
+  onVideosGenerated,
+}: GenerateStepProps) {
   const [scenes, setScenes] = useState<Scene[]>(project.scenes ?? []);
   const [promptsGenerated, setPromptsGenerated] = useState(false);
   const [isGeneratingPrompts, setIsGeneratingPrompts] = useState(false);
@@ -91,6 +100,7 @@ export function GenerateStep({ project, onBack }: GenerateStepProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: scene.prompt,
+          referenceImageUrl: referenceImageUrl || undefined,
           model: "kling3_0_turbo",
           aspectRatio: "9:16",
           duration: Math.min(scene.duration, 10),
@@ -125,6 +135,7 @@ export function GenerateStep({ project, onBack }: GenerateStepProps) {
     setIsGeneratingVideos(true);
     setClipResults([]);
 
+    const results: { sceneId: string; videoUrl: string }[] = [];
     for (let i = 0; i < scenes.length; i++) {
       await generateVideoForScene(scenes[i], i);
     }
@@ -132,6 +143,15 @@ export function GenerateStep({ project, onBack }: GenerateStepProps) {
     setIsGeneratingVideos(false);
     setCurrentScene(-1);
   }
+
+  useEffect(() => {
+    if (allDone && completedClips > 0) {
+      const videos = clipResults
+        .filter((cr) => cr.videoUrl)
+        .map((cr) => ({ sceneId: cr.sceneId, videoUrl: cr.videoUrl! }));
+      onVideosGenerated?.(videos);
+    }
+  }, [clipResults]);
 
   const totalClips = scenes.reduce((sum, s) => sum + s.clips.length, 0);
   const totalDuration = scenes.reduce((sum, s) => sum + s.duration, 0);
@@ -344,34 +364,12 @@ export function GenerateStep({ project, onBack }: GenerateStepProps) {
       </div>
 
       {allDone && completedClips > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">내보내기</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center gap-3">
-              <Badge variant="outline">YouTube Shorts (9:16)</Badge>
-              <Badge variant="outline">Instagram Reels (9:16)</Badge>
-            </div>
-            <div className="flex gap-2">
-              {clipResults
-                .filter((cr) => cr.videoUrl)
-                .map((cr, i) => (
-                  <a
-                    key={cr.sceneId}
-                    href={cr.videoUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <Button variant="outline" size="sm" className="gap-1.5">
-                      <Download className="h-3.5 w-3.5" />
-                      씬 {i + 1}
-                    </Button>
-                  </a>
-                ))}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex justify-center">
+          <Button size="lg" onClick={onNext} className="gap-2 px-8">
+            <Film className="h-5 w-5" />
+            합성 & 편집으로
+          </Button>
+        </div>
       )}
 
       <div className="flex justify-start">

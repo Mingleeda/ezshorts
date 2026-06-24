@@ -56,6 +56,7 @@ interface ReferenceStepProps {
   onUpdate: (updates: Partial<StoryProject>) => void;
   onNext: () => void;
   onBack: () => void;
+  onReferenceGenerated?: (url: string) => void;
 }
 
 export function ReferenceStep({
@@ -63,6 +64,7 @@ export function ReferenceStep({
   onUpdate,
   onNext,
   onBack,
+  onReferenceGenerated,
 }: ReferenceStepProps) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -79,6 +81,7 @@ export function ReferenceStep({
       const url = await generateViaAPI(prompt);
       setImageUrl(url);
       setIsLoading(false);
+      onReferenceGenerated?.(url);
     } catch {
       setIsLoading(false);
       setIsFailed(true);
