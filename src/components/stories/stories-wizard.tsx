@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { StoryInput } from "./steps/story-input";
 import { MoodboardStep } from "./steps/moodboard-step";
 import { ScenarioStep } from "./steps/scenario-step";
 import { ReferenceStep } from "./steps/reference-step";
 import { GenerateStep } from "./steps/generate-step";
 import { WizardProgress } from "@/components/shared/wizard-progress";
+import { saveProject, generateId } from "@/lib/storage";
 import type { StoryProject } from "@/types";
 
 const STEPS = [
@@ -20,16 +21,32 @@ const STEPS = [
 export function StoriesWizard() {
   const [currentStep, setCurrentStep] = useState(0);
   const [project, setProject] = useState<Partial<StoryProject>>({
+    id: generateId(),
     type: "stories",
     platform: "youtube_shorts",
+    createdAt: new Date(),
+    updatedAt: new Date(),
   });
 
   const goNext = () => setCurrentStep((s) => Math.min(s + 1, STEPS.length - 1));
   const goBack = () => setCurrentStep((s) => Math.max(s - 1, 0));
 
-  const updateProject = (updates: Partial<StoryProject>) => {
-    setProject((prev) => ({ ...prev, ...updates }));
-  };
+  const updateProject = useCallback(
+    (updates: Partial<StoryProject>) => {
+      setProject((prev) => {
+        const updated = { ...prev, ...updates, updatedAt: new Date() };
+        if (updated.id && updated.storyText) {
+          const name =
+            updated.name ??
+            updated.storyText.slice(0, 20) +
+              (updated.storyText.length > 20 ? "..." : "");
+          saveProject({ ...updated, name } as StoryProject);
+        }
+        return updated;
+      });
+    },
+    []
+  );
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">

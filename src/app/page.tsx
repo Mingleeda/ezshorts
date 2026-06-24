@@ -6,8 +6,9 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { BookOpen, Users, ShoppingBag, GraduationCap } from "lucide-react";
+import { RecentProjects } from "@/components/shared/recent-projects";
 
-const usesCases = [
+const useCases = [
   {
     type: "stories",
     title: "썰 쇼츠",
@@ -63,7 +64,7 @@ export default function HomePage() {
           무엇을 만들까요?
         </h2>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {usesCases.map((uc) => (
+          {useCases.map((uc) => (
             <Link key={uc.type} href={uc.href}>
               <Card className="group cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 h-full">
                 <CardHeader className="items-center text-center gap-3 p-6">
@@ -83,15 +84,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section>
-        <h2 className="text-sm font-medium text-muted-foreground mb-4">
-          최근 프로젝트
-        </h2>
-        <div className="rounded-lg border border-dashed p-12 text-center text-muted-foreground">
-          <p>아직 프로젝트가 없습니다</p>
-          <p className="text-sm mt-1">위에서 만들고 싶은 영상 타입을 선택해보세요</p>
-        </div>
-      </section>
+      <RecentProjects />
     </div>
   );
 }

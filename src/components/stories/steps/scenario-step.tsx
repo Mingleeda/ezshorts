@@ -15,10 +15,11 @@ import {
   ArrowLeft,
   ArrowRight,
   RefreshCw,
-  Plus,
   Trash2,
   ChevronDown,
   ChevronUp,
+  Sparkles,
+  Loader2,
 } from "lucide-react";
 import type { StoryProject, Scene } from "@/types";
 import { splitStoryIntoScenes } from "@/lib/prompts/scenario";
@@ -38,30 +39,62 @@ export function ScenarioStep({
 }: ScenarioStepProps) {
   const [scenes, setScenes] = useState<Scene[]>(project.scenes ?? []);
   const [expandedPrompt, setExpandedPrompt] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [aiSource, setAiSource] = useState(false);
+
+  const sceneCount =
+    (project.targetDuration ?? 45) <= 20
+      ? 2
+      : (project.targetDuration ?? 45) <= 35
+        ? 3
+        : (project.targetDuration ?? 45) <= 50
+          ? 4
+          : 5;
 
   useEffect(() => {
     if (scenes.length === 0 && project.storyText) {
-      const generated = splitStoryIntoScenes(
-        project.storyText,
-        project.targetDuration ?? 45,
-        project.atmosphere ?? "funny",
-        project.artStyle ?? "semi_realistic"
-      );
-      setScenes(generated);
+      generateWithAI();
     }
   }, []);
 
-  const handleRegenerate = () => {
-    if (project.storyText) {
-      const generated = splitStoryIntoScenes(
-        project.storyText,
-        project.targetDuration ?? 45,
-        project.atmosphere ?? "funny",
-        project.artStyle ?? "semi_realistic"
-      );
-      setScenes(generated);
-    }
-  };
+  async function generateWithAI() {
+    if (!project.storyText) return;
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/prompts/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storyText: project.storyText,
+          atmosphere: project.atmosphere ?? "funny",
+          artStyle: project.artStyle ?? "semi_realistic",
+          targetDuration: project.targetDuration ?? 45,
+          sceneCount,
+        }),
+      });
+      const data = await res.json();
+      if (data.scenes && !data.fallback) {
+        setScenes(data.scenes);
+        setAiSource(true);
+        return;
+      }
+    } catch {}
+    const fallback = splitStoryIntoScenes(
+      project.storyText,
+      project.targetDuration ?? 45,
+      project.atmosphere ?? "funny",
+      project.artStyle ?? "semi_realistic"
+    );
+    setScenes(fallback);
+    setAiSource(false);
+    setIsLoading(false);
+  }
+
+  useEffect(() => {
+    if (scenes.length > 0) setIsLoading(false);
+  }, [scenes]);
+
+  const handleRegenerate = () => generateWithAI();
 
   const handleNext = () => {
     onUpdate({ scenes });
@@ -81,6 +114,20 @@ export function ScenarioStep({
   const totalDuration = scenes.reduce((sum, s) => sum + s.duration, 0);
   const totalClips = scenes.reduce((sum, s) => sum + s.clips.length, 0);
 
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-4">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <div className="text-center">
+          <p className="font-medium">AI가 시나리오를 구성하고 있어요</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            한국어 → 영어 프롬프트 자동 변환 중...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between">
@@ -90,15 +137,27 @@ export function ScenarioStep({
             AI가 {scenes.length}개 씬으로 나눴어요
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleRegenerate}
-          className="gap-1.5"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-          재구성
-        </Button>
+        <div className="flex items-center gap-2">
+          {aiSource && (
+            <Badge
+              variant="secondary"
+              className="text-xs gap-1 text-green-600"
+            >
+              <Sparkles className="h-3 w-3" />
+              AI 생성
+            </Badge>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRegenerate}
+            className="gap-1.5"
+            disabled={isLoading}
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            재구성
+          </Button>
+        </div>
       </div>
 
       <div className="flex items-center gap-3 text-sm text-muted-foreground">
