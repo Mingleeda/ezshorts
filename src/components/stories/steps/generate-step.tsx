@@ -15,7 +15,6 @@ import {
 import {
   ArrowLeft,
   Download,
-  Play,
   Film,
   Type,
   Music,
@@ -24,6 +23,8 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
+  Check,
+  Play,
 } from "lucide-react";
 import type { StoryProject, Scene } from "@/types";
 import { buildAllEnglishPrompts } from "@/lib/prompts/scenario";
@@ -33,11 +34,24 @@ interface GenerateStepProps {
   onBack: () => void;
 }
 
+type ClipStatus = "pending" | "generating" | "completed" | "failed";
+
+interface ClipResult {
+  sceneId: string;
+  clipIndex: number;
+  status: ClipStatus;
+  videoUrl?: string;
+  error?: string;
+}
+
 export function GenerateStep({ project, onBack }: GenerateStepProps) {
   const [scenes, setScenes] = useState<Scene[]>(project.scenes ?? []);
   const [promptsGenerated, setPromptsGenerated] = useState(false);
   const [isGeneratingPrompts, setIsGeneratingPrompts] = useState(false);
   const [expandedPrompt, setExpandedPrompt] = useState<string | null>(null);
+  const [clipResults, setClipResults] = useState<ClipResult[]>([]);
+  const [isGeneratingVideos, setIsGeneratingVideos] = useState(false);
+  const [currentScene, setCurrentScene] = useState<number>(-1);
 
   useEffect(() => {
     if (!promptsGenerated && scenes.length > 0) {
@@ -59,8 +73,74 @@ export function GenerateStep({ project, onBack }: GenerateStepProps) {
     }, 500);
   }
 
+  async function generateVideoForScene(scene: Scene, sceneIdx: number) {
+    setCurrentScene(sceneIdx);
+
+    setClipResults((prev) => [
+      ...prev,
+      {
+        sceneId: scene.id,
+        clipIndex: 0,
+        status: "generating",
+      },
+    ]);
+
+    try {
+      const res = await fetch("/api/videos/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: scene.prompt,
+          model: "kling3_0_turbo",
+          aspectRatio: "9:16",
+          duration: Math.min(scene.duration, 10),
+        }),
+      });
+      const data = await res.json();
+
+      setClipResults((prev) =>
+        prev.map((cr) =>
+          cr.sceneId === scene.id && cr.clipIndex === 0
+            ? {
+                ...cr,
+                status: data.videoUrl ? "completed" : "failed",
+                videoUrl: data.videoUrl,
+                error: data.error,
+              }
+            : cr
+        )
+      );
+    } catch {
+      setClipResults((prev) =>
+        prev.map((cr) =>
+          cr.sceneId === scene.id && cr.clipIndex === 0
+            ? { ...cr, status: "failed", error: "네트워크 에러" }
+            : cr
+        )
+      );
+    }
+  }
+
+  async function generateAllVideos() {
+    setIsGeneratingVideos(true);
+    setClipResults([]);
+
+    for (let i = 0; i < scenes.length; i++) {
+      await generateVideoForScene(scenes[i], i);
+    }
+
+    setIsGeneratingVideos(false);
+    setCurrentScene(-1);
+  }
+
   const totalClips = scenes.reduce((sum, s) => sum + s.clips.length, 0);
   const totalDuration = scenes.reduce((sum, s) => sum + s.duration, 0);
+  const completedClips = clipResults.filter(
+    (cr) => cr.status === "completed"
+  ).length;
+  const allDone =
+    clipResults.length > 0 &&
+    clipResults.every((cr) => cr.status === "completed" || cr.status === "failed");
 
   if (isGeneratingPrompts) {
     return (
@@ -90,121 +170,138 @@ export function GenerateStep({ project, onBack }: GenerateStepProps) {
           <CardTitle className="text-base flex items-center gap-2">
             <Sparkles className="h-4 w-4" />
             씬별 프롬프트
-            <Badge variant="secondary" className="text-xs font-normal">
-              자동 생성됨
-            </Badge>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {scenes.map((scene, index) => (
-            <div key={scene.id} className="rounded-lg border p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">씬 {index + 1}</span>
-                  <Badge variant="outline" className="text-[10px]">
-                    {scene.duration}초 · 클립 {scene.clips.length}개
-                  </Badge>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 w-7 p-0"
-                  onClick={() =>
-                    setExpandedPrompt(
-                      expandedPrompt === scene.id ? null : scene.id
-                    )
-                  }
-                >
-                  {expandedPrompt === scene.id ? (
-                    <ChevronUp className="h-3.5 w-3.5" />
-                  ) : (
-                    <ChevronDown className="h-3.5 w-3.5" />
-                  )}
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {scene.description}
-              </p>
-              <div className="flex flex-wrap gap-1">
-                {scene.promptTags.map((tag) => (
-                  <Badge
-                    key={tag}
-                    variant="secondary"
-                    className="text-[10px] font-normal"
-                  >
-                    {tag}
-                  </Badge>
-                ))}
-              </div>
-              {expandedPrompt === scene.id && (
-                <Textarea
-                  value={scene.prompt}
-                  onChange={(e) =>
-                    setScenes((prev) =>
-                      prev.map((s) =>
-                        s.id === scene.id
-                          ? { ...s, prompt: e.target.value }
-                          : s
-                      )
-                    )
-                  }
-                  rows={3}
-                  className="text-xs font-mono resize-none mt-1"
-                  placeholder="영어 프롬프트"
-                />
-              )}
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Film className="h-4 w-4" />
-            타임라인
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            {scenes.map((scene, sceneIdx) => (
-              <div key={scene.id} className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground w-10">
-                    씬 {sceneIdx + 1}
-                  </span>
-                  <div className="flex-1 flex gap-0.5">
-                    {scene.clips.map((clip, clipIdx) => (
-                      <div
-                        key={clip.id}
-                        className="flex-1 h-10 rounded bg-muted flex items-center justify-center text-[10px] text-muted-foreground border"
-                      >
-                        클립 {clipIdx + 1}
-                      </div>
-                    ))}
+          {scenes.map((scene, index) => {
+            const clip = clipResults.find((cr) => cr.sceneId === scene.id);
+            return (
+              <div key={scene.id} className="rounded-lg border p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">씬 {index + 1}</span>
+                    <Badge variant="outline" className="text-[10px]">
+                      {scene.duration}초
+                    </Badge>
+                    {clip?.status === "generating" && (
+                      <Badge className="text-[10px] gap-1 bg-blue-500">
+                        <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                        생성 중
+                      </Badge>
+                    )}
+                    {clip?.status === "completed" && (
+                      <Badge className="text-[10px] gap-1 bg-green-500">
+                        <Check className="h-2.5 w-2.5" />
+                        완료
+                      </Badge>
+                    )}
+                    {clip?.status === "failed" && (
+                      <Badge variant="destructive" className="text-[10px]">
+                        실패
+                      </Badge>
+                    )}
                   </div>
-                  <Badge variant="outline" className="text-[10px]">
-                    {scene.duration}초
-                  </Badge>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    onClick={() =>
+                      setExpandedPrompt(
+                        expandedPrompt === scene.id ? null : scene.id
+                      )
+                    }
+                  >
+                    {expandedPrompt === scene.id ? (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
                 </div>
-                {sceneIdx < scenes.length - 1 && (
-                  <div className="flex items-center gap-2 ml-12">
-                    <div className="h-px flex-1 bg-border" />
-                    <span className="text-[10px] text-muted-foreground">
-                      페이드
-                    </span>
-                    <div className="h-px flex-1 bg-border" />
+                <p className="text-xs text-muted-foreground">
+                  {scene.description}
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {scene.promptTags.map((tag) => (
+                    <Badge
+                      key={tag}
+                      variant="secondary"
+                      className="text-[10px] font-normal"
+                    >
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+                {expandedPrompt === scene.id && (
+                  <Textarea
+                    value={scene.prompt}
+                    onChange={(e) =>
+                      setScenes((prev) =>
+                        prev.map((s) =>
+                          s.id === scene.id
+                            ? { ...s, prompt: e.target.value }
+                            : s
+                        )
+                      )
+                    }
+                    rows={3}
+                    className="text-xs font-mono resize-none mt-1"
+                  />
+                )}
+                {clip?.videoUrl && (
+                  <div className="mt-2">
+                    <video
+                      src={clip.videoUrl}
+                      controls
+                      className="w-full rounded-lg max-h-64 bg-black"
+                    />
                   </div>
                 )}
               </div>
-            ))}
-          </div>
-          <div className="mt-3 pt-3 border-t flex items-center justify-between">
-            <span className="text-sm font-medium">총 {totalDuration}초</span>
-            <Badge>클립 {totalClips}개</Badge>
-          </div>
+            );
+          })}
         </CardContent>
       </Card>
+
+      {isGeneratingVideos && (
+        <Card className="border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/30">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+              <div>
+                <p className="text-sm font-medium">
+                  영상 생성 중... (씬 {currentScene + 1}/{scenes.length})
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  씬당 1~3분 소요 · 완료: {completedClips}/{scenes.length}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="flex justify-center">
+        <Button
+          size="lg"
+          className="gap-2 px-8"
+          onClick={generateAllVideos}
+          disabled={isGeneratingVideos || !promptsGenerated}
+        >
+          {isGeneratingVideos ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : allDone ? (
+            <Check className="h-5 w-5" />
+          ) : (
+            <Film className="h-5 w-5" />
+          )}
+          {isGeneratingVideos
+            ? "생성 중..."
+            : allDone
+              ? "다시 생성하기"
+              : "영상 생성하기"}
+        </Button>
+      </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Card className="p-3">
@@ -246,28 +343,36 @@ export function GenerateStep({ project, onBack }: GenerateStepProps) {
         </Card>
       </div>
 
-      <div className="flex justify-center">
-        <Button size="lg" className="gap-2 px-8">
-          <Film className="h-5 w-5" />
-          영상 생성하기
-        </Button>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">내보내기</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-center gap-3">
-            <Badge variant="outline">YouTube Shorts (9:16)</Badge>
-            <Badge variant="outline">Instagram Reels (9:16)</Badge>
-          </div>
-          <Button disabled variant="outline" className="gap-1.5">
-            <Download className="h-4 w-4" />
-            다운로드
-          </Button>
-        </CardContent>
-      </Card>
+      {allDone && completedClips > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">내보내기</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center gap-3">
+              <Badge variant="outline">YouTube Shorts (9:16)</Badge>
+              <Badge variant="outline">Instagram Reels (9:16)</Badge>
+            </div>
+            <div className="flex gap-2">
+              {clipResults
+                .filter((cr) => cr.videoUrl)
+                .map((cr, i) => (
+                  <a
+                    key={cr.sceneId}
+                    href={cr.videoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Button variant="outline" size="sm" className="gap-1.5">
+                      <Download className="h-3.5 w-3.5" />
+                      씬 {i + 1}
+                    </Button>
+                  </a>
+                ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex justify-start">
         <Button variant="outline" onClick={onBack} className="gap-1.5">
