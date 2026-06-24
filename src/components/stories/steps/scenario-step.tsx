@@ -7,7 +7,6 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  CardDescription,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,10 +15,9 @@ import {
   ArrowRight,
   RefreshCw,
   Trash2,
-  ChevronDown,
-  ChevronUp,
-  Sparkles,
   Loader2,
+  Pencil,
+  Check,
 } from "lucide-react";
 import type { StoryProject, Scene } from "@/types";
 import { splitStoryIntoScenes } from "@/lib/prompts/scenario";
@@ -38,9 +36,9 @@ export function ScenarioStep({
   onBack,
 }: ScenarioStepProps) {
   const [scenes, setScenes] = useState<Scene[]>(project.scenes ?? []);
-  const [expandedPrompt, setExpandedPrompt] = useState<string | null>(null);
+  const [editingScene, setEditingScene] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [aiSource, setAiSource] = useState(false);
 
   const sceneCount =
     (project.targetDuration ?? 45) <= 20
@@ -53,13 +51,14 @@ export function ScenarioStep({
 
   useEffect(() => {
     if (scenes.length === 0 && project.storyText) {
-      generateWithAI();
+      generateScenes();
     }
   }, []);
 
-  async function generateWithAI() {
+  async function generateScenes() {
     if (!project.storyText) return;
     setIsLoading(true);
+
     try {
       const res = await fetch("/api/prompts/generate", {
         method: "POST",
@@ -74,11 +73,17 @@ export function ScenarioStep({
       });
       const data = await res.json();
       if (data.scenes && !data.fallback) {
-        setScenes(data.scenes);
-        setAiSource(true);
+        const scenesWithoutPrompts = data.scenes.map((s: Scene) => ({
+          ...s,
+          prompt: "",
+          promptTags: [],
+        }));
+        setScenes(scenesWithoutPrompts);
+        setIsLoading(false);
         return;
       }
     } catch {}
+
     const fallback = splitStoryIntoScenes(
       project.storyText,
       project.targetDuration ?? 45,
@@ -86,42 +91,42 @@ export function ScenarioStep({
       project.artStyle ?? "semi_realistic"
     );
     setScenes(fallback);
-    setAiSource(false);
     setIsLoading(false);
   }
 
-  useEffect(() => {
-    if (scenes.length > 0) setIsLoading(false);
-  }, [scenes]);
-
-  const handleRegenerate = () => generateWithAI();
-
-  const handleNext = () => {
-    onUpdate({ scenes });
-    onNext();
+  const startEdit = (scene: Scene) => {
+    setEditingScene(scene.id);
+    setEditText(scene.description);
   };
 
-  const updateScene = (id: string, updates: Partial<Scene>) => {
+  const saveEdit = (sceneId: string) => {
     setScenes((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, ...updates } : s))
+      prev.map((s) =>
+        s.id === sceneId ? { ...s, description: editText } : s
+      )
     );
+    setEditingScene(null);
   };
 
   const removeScene = (id: string) => {
     setScenes((prev) => prev.filter((s) => s.id !== id));
   };
 
+  const handleNext = () => {
+    onUpdate({ scenes });
+    onNext();
+  };
+
   const totalDuration = scenes.reduce((sum, s) => sum + s.duration, 0);
-  const totalClips = scenes.reduce((sum, s) => sum + s.clips.length, 0);
 
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-4">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         <div className="text-center">
-          <p className="font-medium">AI가 시나리오를 구성하고 있어요</p>
+          <p className="font-medium">AI가 썰의 맥락을 분석하고 있어요</p>
           <p className="text-sm text-muted-foreground mt-1">
-            한국어 → 영어 프롬프트 자동 변환 중...
+            기승전결에 맞게 씬을 나누는 중...
           </p>
         </div>
       </div>
@@ -134,66 +139,47 @@ export function ScenarioStep({
         <div>
           <h1 className="text-2xl font-bold mb-1">시나리오 확인</h1>
           <p className="text-muted-foreground">
-            AI가 {scenes.length}개 씬으로 나눴어요
+            맥락에 맞게 {scenes.length}개 씬으로 나눴어요. 수정할 수 있습니다.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {aiSource && (
-            <Badge
-              variant="secondary"
-              className="text-xs gap-1 text-green-600"
-            >
-              <Sparkles className="h-3 w-3" />
-              AI 생성
-            </Badge>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRegenerate}
-            className="gap-1.5"
-            disabled={isLoading}
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-            재구성
-          </Button>
-        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={generateScenes}
+          className="gap-1.5"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+          재구성
+        </Button>
       </div>
 
       <div className="flex items-center gap-3 text-sm text-muted-foreground">
         <Badge variant="secondary">총 {totalDuration}초</Badge>
         <Badge variant="secondary">씬 {scenes.length}개</Badge>
-        <Badge variant="secondary">클립 {totalClips}개</Badge>
       </div>
 
       <div className="space-y-3">
         {scenes.map((scene, index) => (
           <Card key={scene.id}>
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm flex items-center gap-2">
                   씬 {index + 1}
                   <Badge variant="outline" className="text-xs font-normal">
-                    {scene.duration}초 · 클립 {scene.clips.length}개
+                    {scene.duration}초
                   </Badge>
                 </CardTitle>
                 <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0"
-                    onClick={() =>
-                      setExpandedPrompt(
-                        expandedPrompt === scene.id ? null : scene.id
-                      )
-                    }
-                  >
-                    {expandedPrompt === scene.id ? (
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    ) : (
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    )}
-                  </Button>
+                  {editingScene !== scene.id && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0"
+                      onClick={() => startEdit(scene)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                   {scenes.length > 2 && (
                     <Button
                       variant="ghost"
@@ -206,40 +192,47 @@ export function ScenarioStep({
                   )}
                 </div>
               </div>
-              <CardDescription className="text-sm">
-                {scene.description}
-              </CardDescription>
             </CardHeader>
-            <CardContent className="pt-0 space-y-3">
-              <div className="flex flex-wrap gap-1.5">
-                {scene.promptTags.map((tag) => (
-                  <Badge
-                    key={tag}
-                    variant="secondary"
-                    className="text-xs font-normal"
-                  >
-                    {tag}
-                  </Badge>
-                ))}
-              </div>
-              {expandedPrompt === scene.id && (
+            <CardContent className="pt-0">
+              {editingScene === scene.id ? (
                 <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground">
-                    영어 프롬프트 (수정 가능)
-                  </p>
                   <Textarea
-                    value={scene.prompt}
-                    onChange={(e) =>
-                      updateScene(scene.id, { prompt: e.target.value })
-                    }
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
                     rows={3}
-                    className="text-xs font-mono resize-none"
+                    className="text-sm resize-none"
                   />
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs h-7"
+                      onClick={() => setEditingScene(null)}
+                    >
+                      취소
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="text-xs h-7 gap-1"
+                      onClick={() => saveEdit(scene.id)}
+                    >
+                      <Check className="h-3 w-3" />
+                      저장
+                    </Button>
+                  </div>
                 </div>
+              ) : (
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  {scene.description}
+                </p>
               )}
             </CardContent>
           </Card>
         ))}
+      </div>
+
+      <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+        확인 후 다음 단계에서 영어 프롬프트가 자동 생성됩니다
       </div>
 
       <div className="flex justify-between">
@@ -248,7 +241,7 @@ export function ScenarioStep({
           이전
         </Button>
         <Button onClick={handleNext} className="gap-1.5">
-          레퍼런스 이미지 생성
+          다음
           <ArrowRight className="h-4 w-4" />
         </Button>
       </div>

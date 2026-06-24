@@ -8,11 +8,43 @@ import {
   ArrowLeft,
   ArrowRight,
   RefreshCw,
-  Check,
-  ImageIcon,
   Loader2,
+  Wand2,
+  Check,
 } from "lucide-react";
-import type { StoryProject, Scene } from "@/types";
+import type { StoryProject } from "@/types";
+
+function buildReferencePrompt(project: Partial<StoryProject>): string {
+  const storyText = project.storyText ?? "";
+
+  const artStyleEn: Record<string, string> = {
+    semi_realistic: "semi-realistic digital art, detailed and polished",
+    anime: "anime style, vibrant colors, expressive",
+    "3d": "3D rendered, Pixar-style, smooth shading",
+    illustration: "flat illustration, clean vector art",
+    cinematic: "cinematic photography, dramatic lighting, 35mm film",
+  };
+
+  const atmosphereEn: Record<string, string> = {
+    funny: "humorous lighthearted mood",
+    scary: "dark eerie suspenseful mood",
+    touching: "emotional heartwarming mood, warm soft lighting",
+    shocking: "dramatic intense mood",
+    calm: "peaceful serene mood",
+    exciting: "dynamic energetic mood",
+  };
+
+  const style = artStyleEn[project.artStyle ?? "semi_realistic"];
+  const mood = atmosphereEn[project.atmosphere ?? "funny"];
+
+  return `${style}, ${mood}, character reference sheet showing the main characters from this story: ${storyText.slice(0, 200)}, vertical 9:16 aspect ratio, high quality, 4K, showing character appearance and scene atmosphere, consistent style`;
+}
+
+function buildImageUrl(prompt: string, seed?: number): string {
+  const s = seed ?? Math.floor(Math.random() * 999999);
+  const encoded = encodeURIComponent(prompt);
+  return `https://image.pollinations.ai/prompt/${encoded}?width=768&height=1344&seed=${s}&nologo=true&model=flux`;
+}
 
 interface ReferenceStepProps {
   project: Partial<StoryProject>;
@@ -27,158 +59,172 @@ export function ReferenceStep({
   onNext,
   onBack,
 }: ReferenceStepProps) {
-  const scenes = project.scenes ?? [];
-  const [approvedScenes, setApprovedScenes] = useState<Set<string>>(new Set());
-  const [imageUrls, setImageUrls] = useState<Record<string, string>>(() => {
-    const initial: Record<string, string> = {};
-    scenes.forEach((s) => {
-      if (s.referenceImageUrl) initial[s.id] = s.referenceImageUrl;
-    });
-    return initial;
-  });
-  const [generating, setGenerating] = useState<Set<string>>(new Set());
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isApproved, setIsApproved] = useState(false);
+  const [isFailed, setIsFailed] = useState(false);
 
-  const toggleApprove = (sceneId: string) => {
-    setApprovedScenes((prev) => {
-      const next = new Set(prev);
-      if (next.has(sceneId)) next.delete(sceneId);
-      else next.add(sceneId);
-      return next;
-    });
-  };
+  function generate() {
+    const prompt = buildReferencePrompt(project);
+    const url = buildImageUrl(prompt);
+    setImageUrl(url);
+    setIsLoading(true);
+    setIsApproved(false);
+    setIsFailed(false);
+  }
 
-  const approveAll = () => {
-    setApprovedScenes(new Set(scenes.map((s) => s.id)));
-  };
+  function onImageLoad() {
+    setIsLoading(false);
+  }
+
+  function onImageError() {
+    setIsLoading(false);
+    setIsFailed(true);
+  }
 
   const handleNext = () => {
-    const updatedScenes = scenes.map((s) => ({
-      ...s,
-      referenceImageUrl: imageUrls[s.id] ?? s.referenceImageUrl,
-    }));
-    onUpdate({ scenes: updatedScenes });
     onNext();
   };
 
-  const allApproved =
-    scenes.length > 0 && approvedScenes.size === scenes.length;
+  const artStyleLabels: Record<string, string> = {
+    semi_realistic: "반실사", anime: "애니메이션", "3d": "3D 렌더링",
+    illustration: "일러스트", cinematic: "시네마틱",
+  };
+  const atmosphereLabels: Record<string, string> = {
+    funny: "웃긴 😂", scary: "무서운 👻", touching: "감동 🥹",
+    shocking: "충격 😱", calm: "잔잔한 😌", exciting: "신나는 🔥",
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold mb-1">레퍼런스 이미지 확인</h1>
+          <h1 className="text-2xl font-bold mb-1">캐릭터 & 분위기 확인</h1>
           <p className="text-muted-foreground">
-            영상 생성 전 이미지로 느낌을 확인하세요
+            주인공과 영상 톤을 미리 확인하세요
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={approveAll}>
-            전체 승인
-          </Button>
-        </div>
+        <Button
+          size="sm"
+          onClick={generate}
+          disabled={isLoading}
+          className="gap-1.5"
+        >
+          {isLoading ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Wand2 className="h-3.5 w-3.5" />
+          )}
+          {imageUrl ? "다시 생성" : "이미지 생성"}
+        </Button>
       </div>
 
-      <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
-        <p>
-          이미지 생성은 Claude Code에서 Higgsfield MCP를 통해 실행됩니다.
-          각 씬의 영어 프롬프트를 사용하여 이미지를 생성해주세요.
-        </p>
+      <div className="flex gap-2 flex-wrap">
+        <Badge variant="secondary">
+          {artStyleLabels[project.artStyle ?? "semi_realistic"]}
+        </Badge>
+        <Badge variant="secondary">
+          {atmosphereLabels[project.atmosphere ?? "funny"]}
+        </Badge>
+        <Badge variant="secondary">
+          씬 {project.scenes?.length ?? 0}개 · {project.targetDuration ?? 45}초
+        </Badge>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        {scenes.map((scene, index) => {
-          const isApproved = approvedScenes.has(scene.id);
-          const imageUrl = imageUrls[scene.id];
-          const isGenerating = generating.has(scene.id);
-
-          return (
-            <Card
-              key={scene.id}
-              className={`overflow-hidden transition-all ${
-                isApproved ? "ring-2 ring-primary" : ""
+      <Card className="overflow-hidden">
+        <div className="relative aspect-[9/16] max-w-sm mx-auto bg-muted flex items-center justify-center overflow-hidden">
+          {imageUrl && (
+            <img
+              src={imageUrl}
+              alt="캐릭터 & 분위기 레퍼런스"
+              className={`w-full h-full object-cover transition-opacity duration-500 ${
+                isLoading ? "opacity-0" : "opacity-100"
               }`}
+              onLoad={onImageLoad}
+              onError={onImageError}
+            />
+          )}
+          {isLoading && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted">
+              <Loader2 className="h-10 w-10 text-primary animate-spin mb-3" />
+              <p className="text-sm font-medium">
+                AI가 캐릭터와 분위기를 그리고 있어요
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                10~20초 소요
+              </p>
+            </div>
+          )}
+          {!imageUrl && !isLoading && (
+            <button
+              onClick={generate}
+              className="w-full h-full flex flex-col items-center justify-center cursor-pointer hover:bg-muted/80 transition-colors"
             >
-              <div className="relative aspect-[9/16] bg-muted flex items-center justify-center overflow-hidden">
-                {imageUrl ? (
-                  <img
-                    src={imageUrl}
-                    alt={`씬 ${index + 1} 레퍼런스`}
-                    className="w-full h-full object-cover"
-                  />
-                ) : isGenerating ? (
-                  <div className="text-center p-4">
-                    <Loader2 className="h-8 w-8 text-muted-foreground/60 mx-auto mb-2 animate-spin" />
-                    <p className="text-xs text-muted-foreground">생성 중...</p>
-                  </div>
-                ) : (
-                  <div className="text-center p-4">
-                    <ImageIcon className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
-                    <p className="text-xs text-muted-foreground">
-                      MCP로 생성 대기
-                    </p>
-                  </div>
-                )}
-                {isApproved && (
-                  <div className="absolute top-2 right-2">
-                    <div className="rounded-full bg-primary p-1">
-                      <Check className="h-3 w-3 text-primary-foreground" />
-                    </div>
-                  </div>
-                )}
+              <Wand2 className="h-10 w-10 text-muted-foreground/30 mb-3" />
+              <p className="text-sm text-muted-foreground">
+                클릭하여 레퍼런스 이미지 생성
+              </p>
+              <p className="text-xs text-muted-foreground/60 mt-1">
+                주인공 + 분위기 확인용
+              </p>
+            </button>
+          )}
+          {isFailed && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted">
+              <p className="text-sm text-destructive mb-3">생성 실패</p>
+              <Button size="sm" variant="outline" onClick={generate}>
+                다시 시도
+              </Button>
+            </div>
+          )}
+          {isApproved && !isLoading && (
+            <div className="absolute top-3 right-3">
+              <div className="rounded-full bg-primary p-1.5">
+                <Check className="h-4 w-4 text-primary-foreground" />
               </div>
-              <CardContent className="p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-medium">씬 {index + 1}</p>
-                  <Badge variant="outline" className="text-[10px]">
-                    {scene.duration}초
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground line-clamp-2">
-                  {scene.description}
-                </p>
-                <div className="flex gap-1.5">
-                  <Button
-                    variant={isApproved ? "default" : "outline"}
-                    size="sm"
-                    className="flex-1 text-xs h-7"
-                    onClick={() => toggleApprove(scene.id)}
-                  >
-                    {isApproved ? "승인됨" : "승인"}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0"
-                    onClick={() => {
-                      setImageUrls((prev) => {
-                        const next = { ...prev };
-                        delete next[scene.id];
-                        return next;
-                      });
-                      setApprovedScenes((prev) => {
-                        const next = new Set(prev);
-                        next.delete(scene.id);
-                        return next;
-                      });
-                    }}
-                  >
-                    <RefreshCw className="h-3 w-3" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+            </div>
+          )}
+        </div>
+        {imageUrl && !isLoading && !isFailed && (
+          <CardContent className="p-4 text-center space-y-3">
+            <p className="text-sm text-muted-foreground">
+              이 캐릭터와 분위기로 영상을 만들까요?
+            </p>
+            <div className="flex justify-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={generate}
+                className="gap-1.5"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                다른 느낌으로
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setIsApproved(true)}
+                className="gap-1.5"
+                variant={isApproved ? "default" : "outline"}
+              >
+                <Check className="h-3.5 w-3.5" />
+                {isApproved ? "승인됨" : "이 느낌으로!"}
+              </Button>
+            </div>
+          </CardContent>
+        )}
+      </Card>
 
       <div className="flex justify-between">
         <Button variant="outline" onClick={onBack} className="gap-1.5">
           <ArrowLeft className="h-4 w-4" />
           이전
         </Button>
-        <Button onClick={handleNext} disabled={!allApproved} className="gap-1.5">
-          이 느낌으로 영상 만들기
+        <Button
+          onClick={handleNext}
+          disabled={!isApproved}
+          className="gap-1.5"
+        >
+          영상 생성으로
           <ArrowRight className="h-4 w-4" />
         </Button>
       </div>

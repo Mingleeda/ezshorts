@@ -1,45 +1,18 @@
 import type { Scene, Atmosphere, ArtStyle, GeneratedClip } from "@/types";
 import { calculateSceneBreakdown } from "./duration";
 
-const ATMOSPHERE_EN: Record<Atmosphere, string> = {
-  funny: "humorous, comedic, lighthearted",
-  scary: "dark, eerie, suspenseful, horror",
-  touching: "emotional, heartwarming, sentimental",
-  shocking: "dramatic, intense, surprising twist",
-  calm: "peaceful, serene, gentle",
-  exciting: "dynamic, energetic, thrilling",
-};
-
-const ART_STYLE_EN: Record<ArtStyle, string> = {
-  semi_realistic: "semi-realistic digital art, detailed illustration with realistic proportions",
-  anime: "anime style, Japanese animation aesthetic, vibrant colors",
-  "3d": "3D rendered, Pixar-style, smooth shading, volumetric lighting",
-  illustration: "flat illustration, clean vector art, minimalist design",
-  cinematic: "cinematic photography style, dramatic lighting, shallow depth of field, 35mm film grain",
-};
-
 export function splitStoryIntoScenes(
   storyText: string,
   targetDuration: number,
   atmosphere: Atmosphere,
   artStyle: ArtStyle
 ): Scene[] {
-  const sentences = storyText
-    .split(/[.!?。\n]+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+  const sceneCount = estimateSceneCount(targetDuration);
+  const breakdown = calculateSceneBreakdown(targetDuration, sceneCount);
 
-  const breakdown = calculateSceneBreakdown(targetDuration, estimateSceneCount(targetDuration));
-  const sceneCount = breakdown.totalClips > 0 ? estimateSceneCount(targetDuration) : 3;
+  const storyScenes = splitByContext(storyText, sceneCount);
 
-  const sceneSentences = distributeEvenly(sentences, sceneCount);
-  const sceneLabels = getSceneLabels(sceneCount);
-
-  return sceneSentences.map((group, index) => {
-    const description = group.join(". ") || `장면 ${index + 1}`;
-    const prompt = buildEnglishPrompt(description, atmosphere, artStyle, sceneLabels[index]);
-    const tags = buildKoreanTags(description, atmosphere, artStyle);
-
+  return storyScenes.map((description, index) => {
     const clips: GeneratedClip[] = Array.from(
       { length: breakdown.clipsPerScene },
       (_, clipIdx) => ({
@@ -55,8 +28,8 @@ export function splitStoryIntoScenes(
       id: `scene-${index}`,
       order: index,
       description,
-      prompt,
-      promptTags: tags,
+      prompt: "",
+      promptTags: [],
       clips,
       duration: breakdown.sceneDuration,
     };
@@ -70,45 +43,153 @@ function estimateSceneCount(targetDuration: number): number {
   return 5;
 }
 
-function distributeEvenly(items: string[], groups: number): string[][] {
-  if (items.length === 0) {
-    return Array.from({ length: groups }, (_, i) => [`장면 ${i + 1} 내용`]);
+function splitByContext(text: string, targetCount: number): string[] {
+  const segments = text
+    .split(/(?<=[.!?。\n])\s*/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+
+  if (segments.length === 0) {
+    return Array.from({ length: targetCount }, (_, i) => `장면 ${i + 1}`);
   }
 
-  const result: string[][] = Array.from({ length: groups }, () => []);
-  const perGroup = Math.max(1, Math.floor(items.length / groups));
+  if (segments.length <= targetCount) {
+    const result: string[] = [];
+    for (let i = 0; i < targetCount; i++) {
+      result.push(segments[i] ?? `장면 ${i + 1}`);
+    }
+    return result;
+  }
 
-  items.forEach((item, i) => {
-    const groupIdx = Math.min(Math.floor(i / perGroup), groups - 1);
-    result[groupIdx].push(item);
-  });
+  const contextBreaks = findContextBreaks(segments);
+
+  if (contextBreaks.length >= targetCount - 1) {
+    return groupByBreaks(segments, contextBreaks, targetCount);
+  }
+
+  return distributeByMeaning(segments, targetCount);
+}
+
+function findContextBreaks(segments: string[]): number[] {
+  const breaks: number[] = [];
+  const transitionWords = [
+    "그런데", "근데", "그래서", "그러다", "하지만", "그러자",
+    "결국", "알고보니", "그때", "갑자기", "그러더니", "그랬더니",
+    "했더니", "나중에", "그 후", "그리고", "그러면서", "순간",
+    "다음날", "며칠 후", "그날", "이때", "바로 그때",
+  ];
+
+  for (let i = 1; i < segments.length; i++) {
+    const seg = segments[i];
+    const hasTransition = transitionWords.some((w) => seg.startsWith(w));
+    const hasQuoteShift =
+      (segments[i - 1].includes('"') || segments[i - 1].includes("'")) !==
+      (seg.includes('"') || seg.includes("'"));
+    const hasLongPause = segments[i - 1].endsWith("...") || segments[i - 1].endsWith("…");
+
+    if (hasTransition || hasQuoteShift || hasLongPause) {
+      breaks.push(i);
+    }
+  }
+
+  return breaks;
+}
+
+function groupByBreaks(
+  segments: string[],
+  breaks: number[],
+  targetCount: number
+): string[] {
+  const selectedBreaks = selectEvenlySpaced(breaks, targetCount - 1);
+  const groups: string[][] = [];
+  let start = 0;
+
+  for (const breakIdx of selectedBreaks) {
+    groups.push(segments.slice(start, breakIdx));
+    start = breakIdx;
+  }
+  groups.push(segments.slice(start));
+
+  return groups.map((g) => g.join(" "));
+}
+
+function selectEvenlySpaced(arr: number[], count: number): number[] {
+  if (arr.length <= count) return arr;
+  const step = arr.length / count;
+  const result: number[] = [];
+  for (let i = 0; i < count; i++) {
+    result.push(arr[Math.round(i * step)]);
+  }
+  return result;
+}
+
+function distributeByMeaning(
+  segments: string[],
+  targetCount: number
+): string[] {
+  const perGroup = Math.ceil(segments.length / targetCount);
+  const result: string[] = [];
+
+  for (let i = 0; i < targetCount; i++) {
+    const start = i * perGroup;
+    const end = Math.min(start + perGroup, segments.length);
+    const group = segments.slice(start, end);
+    if (group.length > 0) {
+      result.push(group.join(" "));
+    }
+  }
+
+  while (result.length < targetCount) {
+    result.push(`장면 ${result.length + 1}`);
+  }
 
   return result;
 }
 
-function getSceneLabels(count: number): string[] {
-  if (count <= 2) return ["opening scene", "climax and ending"];
-  if (count <= 3) return ["opening scene, establishing setting", "rising action and conflict", "climax and resolution"];
-  if (count <= 4) return ["opening scene", "rising action", "climax", "resolution and ending"];
-  return ["opening scene", "early development", "rising action", "climax", "resolution and ending"];
+export function buildAllEnglishPrompts(
+  scenes: Scene[],
+  atmosphere: Atmosphere,
+  artStyle: ArtStyle
+): Scene[] {
+  const ATMOSPHERE_EN: Record<Atmosphere, string> = {
+    funny: "humorous, comedic, lighthearted",
+    scary: "dark, eerie, suspenseful, horror",
+    touching: "emotional, heartwarming, sentimental",
+    shocking: "dramatic, intense, surprising twist",
+    calm: "peaceful, serene, gentle",
+    exciting: "dynamic, energetic, thrilling",
+  };
+
+  const ART_STYLE_EN: Record<ArtStyle, string> = {
+    semi_realistic: "semi-realistic digital art, detailed illustration with realistic proportions",
+    anime: "anime style, Japanese animation aesthetic, vibrant colors",
+    "3d": "3D rendered, Pixar-style, smooth shading, volumetric lighting",
+    illustration: "flat illustration, clean vector art, minimalist design",
+    cinematic: "cinematic photography style, dramatic lighting, shallow depth of field, 35mm film grain",
+  };
+
+  const narrativeRoles = getSceneLabels(scenes.length);
+
+  return scenes.map((scene, index) => ({
+    ...scene,
+    prompt: [
+      ART_STYLE_EN[artStyle],
+      `${ATMOSPHERE_EN[atmosphere]} mood`,
+      narrativeRoles[index],
+      `scene: ${scene.description}`,
+      "vertical 9:16 aspect ratio, high quality, 4K, detailed, consistent style",
+    ].join(", "),
+    promptTags: buildKoreanTags(scene.description, atmosphere, artStyle),
+  }));
 }
 
-function buildEnglishPrompt(
-  koreanDescription: string,
-  atmosphere: Atmosphere,
-  artStyle: ArtStyle,
-  narrativeRole: string
-): string {
-  const parts = [
-    ART_STYLE_EN[artStyle],
-    `${ATMOSPHERE_EN[atmosphere]} mood`,
-    `${narrativeRole}`,
-    `vertical 9:16 aspect ratio`,
-    `scene description: ${koreanDescription}`,
-    `high quality, detailed, consistent style`,
-  ];
-
-  return parts.join(", ");
+function getSceneLabels(count: number): string[] {
+  if (count <= 2) return ["opening scene", "climax and ending"];
+  if (count <= 3)
+    return ["opening, establishing setting", "rising action and conflict", "climax and resolution"];
+  if (count <= 4)
+    return ["opening scene", "rising action", "climax", "resolution and ending"];
+  return ["opening scene", "early development", "rising action", "climax", "resolution"];
 }
 
 function buildKoreanTags(
@@ -117,29 +198,19 @@ function buildKoreanTags(
   artStyle: ArtStyle
 ): string[] {
   const atmosphereKr: Record<Atmosphere, string> = {
-    funny: "코믹",
-    scary: "공포",
-    touching: "감동",
-    shocking: "충격",
-    calm: "잔잔",
-    exciting: "신남",
+    funny: "코믹", scary: "공포", touching: "감동",
+    shocking: "충격", calm: "잔잔", exciting: "신남",
   };
-
   const artStyleKr: Record<ArtStyle, string> = {
-    semi_realistic: "반실사",
-    anime: "애니",
-    "3d": "3D",
-    illustration: "일러스트",
-    cinematic: "시네마틱",
+    semi_realistic: "반실사", anime: "애니", "3d": "3D",
+    illustration: "일러스트", cinematic: "시네마틱",
   };
 
-  const tags = [atmosphereKr[atmosphere], artStyleKr[artStyle], "9:16 세로형"];
-
+  const tags = [atmosphereKr[atmosphere], artStyleKr[artStyle], "9:16"];
   const keywords = description
     .replace(/[^가-힣a-zA-Z\s]/g, "")
     .split(/\s+/)
     .filter((w) => w.length >= 2)
     .slice(0, 3);
-
   return [...tags, ...keywords];
 }
