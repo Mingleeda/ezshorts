@@ -40,10 +40,15 @@ function buildReferencePrompt(project: Partial<StoryProject>): string {
   return `${style}, ${mood}, character reference sheet showing the main characters from this story: ${storyText.slice(0, 200)}, vertical 9:16 aspect ratio, high quality, 4K, showing character appearance and scene atmosphere, consistent style`;
 }
 
-function buildImageUrl(prompt: string, seed?: number): string {
-  const s = seed ?? Math.floor(Math.random() * 999999);
-  const encoded = encodeURIComponent(prompt);
-  return `https://image.pollinations.ai/prompt/${encoded}?width=768&height=1344&seed=${s}&nologo=true&model=flux`;
+async function generateViaAPI(prompt: string): Promise<string> {
+  const res = await fetch("/api/images/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt, model: "recraft_v4_1", aspectRatio: "9:16" }),
+  });
+  const data = await res.json();
+  if (data.imageUrl) return data.imageUrl;
+  throw new Error(data.error || "이미지 생성 실패");
 }
 
 interface ReferenceStepProps {
@@ -64,22 +69,20 @@ export function ReferenceStep({
   const [isApproved, setIsApproved] = useState(false);
   const [isFailed, setIsFailed] = useState(false);
 
-  function generate() {
+  async function generate() {
     const prompt = buildReferencePrompt(project);
-    const url = buildImageUrl(prompt);
-    setImageUrl(url);
     setIsLoading(true);
     setIsApproved(false);
     setIsFailed(false);
-  }
-
-  function onImageLoad() {
-    setIsLoading(false);
-  }
-
-  function onImageError() {
-    setIsLoading(false);
-    setIsFailed(true);
+    setImageUrl(null);
+    try {
+      const url = await generateViaAPI(prompt);
+      setImageUrl(url);
+      setIsLoading(false);
+    } catch {
+      setIsLoading(false);
+      setIsFailed(true);
+    }
   }
 
   const handleNext = () => {
@@ -133,15 +136,11 @@ export function ReferenceStep({
 
       <Card className="overflow-hidden">
         <div className="relative aspect-[9/16] max-w-sm mx-auto bg-muted flex items-center justify-center overflow-hidden">
-          {imageUrl && (
+          {imageUrl && !isLoading && (
             <img
               src={imageUrl}
               alt="캐릭터 & 분위기 레퍼런스"
-              className={`w-full h-full object-cover transition-opacity duration-500 ${
-                isLoading ? "opacity-0" : "opacity-100"
-              }`}
-              onLoad={onImageLoad}
-              onError={onImageError}
+              className="w-full h-full object-cover"
             />
           )}
           {isLoading && (
