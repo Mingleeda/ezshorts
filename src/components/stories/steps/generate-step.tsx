@@ -186,7 +186,9 @@ export function GenerateStep({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: scene.prompt,
+          sceneDescription: scene.description,
           referenceUploadId: wizardState.referenceUploadId || undefined,
+          voiceAssignments: wizardState.voiceAssignments.filter((v) => v.voiceId),
           model: "seedance_2_0",
           aspectRatio: "9:16",
           duration: Math.min(scene.duration, 10),
