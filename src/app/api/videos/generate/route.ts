@@ -209,31 +209,17 @@ export async function POST(request: NextRequest) {
       `${prompt}. Animate naturally with realistic motion. No text, no subtitles. Keep same character identity.`
     );
 
-    const mediasJson = audioUploadId
-      ? `'[{"id":"${sceneUploadId}","type":"media_input","role":"start_image"},{"id":"${audioUploadId}","type":"media_input","role":"audio"}]'`
-      : null;
-
-    const videoArgs = audioUploadId
-      ? [
-          "generate", "create", model,
-          `--prompt`, `"${videoPrompt}"`,
-          `--medias`, mediasJson!,
-          `--aspect_ratio`, `"${aspectRatio}"`,
-          `--duration`, `${duration}`,
-          `--mode`, `fast`,
-          `--generate_audio`, `true`,
-          `--wait`, `--json`,
-        ]
-      : [
-          "generate", "create", model,
-          `--prompt`, `"${videoPrompt}"`,
-          `--image`, sceneUploadId,
-          `--aspect_ratio`, `"${aspectRatio}"`,
-          `--duration`, `${duration}`,
-          `--mode`, `fast`,
-          `--generate_audio`, `true`,
-          `--wait`, `--json`,
-        ];
+    const videoArgs = [
+      "generate", "create", model,
+      `--prompt`, `"${videoPrompt}"`,
+      `--image`, sceneUploadId,
+      ...(audioUploadId ? [`--audio`, audioUploadId] : []),
+      `--aspect_ratio`, `"${aspectRatio}"`,
+      `--duration`, `${duration}`,
+      `--mode`, `fast`,
+      `--generate_audio`, `true`,
+      `--wait`, `--json`,
+    ];
 
     const stdout = await runHfCommand(videoArgs);
     const results = JSON.parse(stdout);
