@@ -89,10 +89,7 @@ function estimateSceneCount(targetDuration: number): number {
 }
 
 function splitByContext(text: string, targetCount: number): string[] {
-  const segments = text
-    .split(/(?<=[.!?。\n])\s*/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+  const segments = splitPreservingQuotes(text);
 
   if (segments.length === 0) {
     return Array.from({ length: targetCount }, (_, i) => `장면 ${i + 1}`);
@@ -181,28 +178,74 @@ function selectEvenlySpaced(arr: number[], count: number): number[] {
   return result.slice(0, count);
 }
 
+function splitPreservingQuotes(text: string): string[] {
+  const lines = text.split(/\n+/).map((l) => l.trim()).filter((l) => l.length > 0);
+
+  if (lines.length >= 2) return lines;
+
+  const result: string[] = [];
+  let current = "";
+  let inQuote = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const isQuoteOpen = ['"', '“', '‘'].includes(ch);
+    const isQuoteClose = ['"', '”', '’'].includes(ch);
+
+    if (isQuoteOpen) inQuote = true;
+    current += ch;
+    if (isQuoteClose) inQuote = false;
+
+    if (!inQuote && ['.', '!', '?'].includes(ch)) {
+      const next = text[i + 1];
+      if (!next || next === ' ' || next === '\n') {
+        const trimmed = current.trim();
+        if (trimmed.length > 0) result.push(trimmed);
+        current = "";
+      }
+    }
+  }
+
+  const remaining = current.trim();
+  if (remaining.length > 0) result.push(remaining);
+
+  return result.length > 0 ? result : [text];
+}
+
 function distributeByMeaning(
   segments: string[],
   targetCount: number,
   randomize: boolean = false
 ): string[] {
-  const basePerGroup = Math.ceil(segments.length / targetCount);
-  const variation = randomize ? Math.floor(Math.random() * 2) : 0;
-  const perGroup = Math.max(1, basePerGroup + (Math.random() > 0.5 ? variation : -variation));
-  const result: string[] = [];
+  if (segments.length <= targetCount) {
+    const result = [...segments];
+    while (result.length < targetCount) {
+      result.push(`장면 ${result.length + 1}`);
+    }
+    return result;
+  }
 
-  for (let i = 0; i < targetCount; i++) {
-    const start = i * perGroup;
-    const end = Math.min(start + perGroup, segments.length);
-    const group = segments.slice(start, end);
-    if (group.length > 0) {
-      result.push(group.join(" "));
+  const breakPoints: number[] = [];
+  const baseStep = segments.length / targetCount;
+
+  for (let i = 1; i < targetCount; i++) {
+    let bp = Math.round(i * baseStep);
+    if (randomize) {
+      const jitter = Math.random() > 0.5 ? 1 : -1;
+      bp = Math.max(1, Math.min(segments.length - 1, bp + jitter));
+    }
+    if (breakPoints.length === 0 || bp > breakPoints[breakPoints.length - 1]) {
+      breakPoints.push(bp);
     }
   }
 
-  while (result.length < targetCount) {
-    result.push(`장면 ${result.length + 1}`);
+  const result: string[] = [];
+  let start = 0;
+  for (const bp of breakPoints) {
+    result.push(segments.slice(start, bp).join(" "));
+    start = bp;
   }
+  result.push(segments.slice(start).join(" "));
 
   return result;
 }
