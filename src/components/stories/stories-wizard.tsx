@@ -20,6 +20,13 @@ const STEPS = [
   { id: "compose", label: "합성 & 편집" },
 ];
 
+export interface WizardState {
+  referenceImageUrl: string;
+  referenceUploadId: string;
+  generatedVideos: { sceneId: string; videoUrl: string; sceneImageUrl?: string }[];
+  promptsGenerated: boolean;
+}
+
 export function StoriesWizard() {
   const [currentStep, setCurrentStep] = useState(0);
   const [project, setProject] = useState<Partial<StoryProject>>({
@@ -29,11 +36,13 @@ export function StoriesWizard() {
     createdAt: new Date(),
     updatedAt: new Date(),
   });
-  const [referenceImageUrl, setReferenceImageUrl] = useState<string>("");
-  const [referenceUploadId, setReferenceUploadId] = useState<string>("");
-  const [generatedVideos, setGeneratedVideos] = useState<
-    { sceneId: string; videoUrl: string }[]
-  >([]);
+
+  const [wizardState, setWizardState] = useState<WizardState>({
+    referenceImageUrl: "",
+    referenceUploadId: "",
+    generatedVideos: [],
+    promptsGenerated: false,
+  });
 
   const goNext = () =>
     setCurrentStep((s) => Math.min(s + 1, STEPS.length - 1));
@@ -52,6 +61,13 @@ export function StoriesWizard() {
         }
         return updated;
       });
+    },
+    []
+  );
+
+  const updateWizardState = useCallback(
+    (updates: Partial<WizardState>) => {
+      setWizardState((prev) => ({ ...prev, ...updates }));
     },
     []
   );
@@ -89,26 +105,24 @@ export function StoriesWizard() {
             onUpdate={updateProject}
             onNext={goNext}
             onBack={goBack}
-            onReferenceGenerated={(url, uid) => {
-              setReferenceImageUrl(url);
-              setReferenceUploadId(uid);
-            }}
+            wizardState={wizardState}
+            onWizardStateUpdate={updateWizardState}
           />
         )}
         {currentStep === 4 && (
           <GenerateStep
             project={project}
-            referenceImageUrl={referenceImageUrl}
-            referenceUploadId={referenceUploadId}
+            onUpdate={updateProject}
+            wizardState={wizardState}
+            onWizardStateUpdate={updateWizardState}
             onBack={goBack}
             onNext={goNext}
-            onVideosGenerated={setGeneratedVideos}
           />
         )}
         {currentStep === 5 && (
           <ComposeStep
             project={project}
-            videos={generatedVideos}
+            videos={wizardState.generatedVideos}
             onBack={goBack}
           />
         )}

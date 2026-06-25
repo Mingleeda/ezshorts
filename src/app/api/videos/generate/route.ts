@@ -35,38 +35,28 @@ async function downloadAndUpload(imageUrl: string): Promise<string> {
   }
 }
 
-async function generateSceneImageWithReference(
+async function generateSceneImage(
   prompt: string,
-  referenceUploadId: string,
+  referenceUploadId: string | undefined,
   aspectRatio: string
-): Promise<{ imageUrl: string; uploadId: string }> {
+): Promise<string> {
   const safePrompt = prompt.replace(/"/g, '\\"').replace(/`/g, "\\`");
 
-  const cmd = `${HF_CLI} generate create flux_kontext --prompt "${safePrompt}" --input_images '[{"id":"${referenceUploadId}","type":"media_input"}]' --aspect_ratio "${aspectRatio}" --wait --json`;
-
-  const { stdout } = await execAsync(cmd, { timeout: 120000 });
-  const results = JSON.parse(stdout);
-
-  if (results.length > 0 && results[0].result_url) {
-    const uploadId = await downloadAndUpload(results[0].result_url);
-    return { imageUrl: results[0].result_url, uploadId };
+  if (referenceUploadId) {
+    const enhancedPrompt = `${safePrompt}. Keep the exact same characters from the reference image - same face, hair, clothing. Only change the scene and action as described.`;
+    const cmd = `${HF_CLI} generate create flux_kontext --prompt "${enhancedPrompt}" --input_images '[{"id":"${referenceUploadId}","type":"media_input"}]' --aspect_ratio "${aspectRatio}" --wait --json`;
+    const { stdout } = await execAsync(cmd, { timeout: 120000 });
+    const results = JSON.parse(stdout);
+    if (results.length > 0 && results[0].result_url) {
+      return results[0].result_url;
+    }
   }
-  throw new Error("Scene image generation failed");
-}
 
-async function generateSceneImageStandalone(
-  prompt: string,
-  aspectRatio: string
-): Promise<{ imageUrl: string; uploadId: string }> {
-  const safePrompt = prompt.replace(/"/g, '\\"').replace(/`/g, "\\`");
   const cmd = `${HF_CLI} generate create recraft_v4_1 --prompt "${safePrompt}" --aspect_ratio "${aspectRatio}" --resolution "1k" --wait --json`;
-
   const { stdout } = await execAsync(cmd, { timeout: 120000 });
   const results = JSON.parse(stdout);
-
   if (results.length > 0 && results[0].result_url) {
-    const uploadId = await downloadAndUpload(results[0].result_url);
-    return { imageUrl: results[0].result_url, uploadId };
+    return results[0].result_url;
   }
   throw new Error("Scene image generation failed");
 }
@@ -82,19 +72,17 @@ export async function POST(request: NextRequest) {
   } = body;
 
   try {
-    let sceneResult;
-    if (referenceUploadId) {
-      sceneResult = await generateSceneImageWithReference(
-        prompt,
-        referenceUploadId,
-        aspectRatio
-      );
-    } else {
-      sceneResult = await generateSceneImageStandalone(prompt, aspectRatio);
-    }
+    const sceneImageUrl = await generateSceneImage(
+      prompt,
+      referenceUploadId,
+      aspectRatio
+    );
+
+    const sceneUploadId = await downloadAndUpload(sceneImageUrl);
 
     const safePrompt = prompt.replace(/"/g, '\\"').replace(/`/g, "\\`");
-    const cmd = `${HF_CLI} generate create ${model} --prompt "${safePrompt}" --image ${sceneResult.uploadId} --aspect_ratio "${aspectRatio}" --duration ${duration} --wait --json`;
+    const videoPrompt = `${safePrompt}. Animate this scene naturally with subtle motion.`;
+    const cmd = `${HF_CLI} generate create ${model} --prompt "${videoPrompt}" --image ${sceneUploadId} --aspect_ratio "${aspectRatio}" --duration ${duration} --wait --json`;
 
     const { stdout } = await execAsync(cmd, { timeout: 300000 });
     const results = JSON.parse(stdout);
@@ -102,20 +90,21 @@ export async function POST(request: NextRequest) {
     if (results.length > 0 && results[0].result_url) {
       return NextResponse.json({
         videoUrl: results[0].result_url,
-        sceneImageUrl: sceneResult.imageUrl,
+        sceneImageUrl,
         jobId: results[0].id,
         status: "completed",
       });
     }
 
     return NextResponse.json(
-      { error: "No video generated" },
+      { error: "영상 생성 실패" },
       { status: 500 }
     );
   } catch (error) {
     console.error("Video generation error:", error);
+    const msg = error instanceof Error ? error.message : "영상 생성 실패";
     return NextResponse.json(
-      { error: "Video generation failed" },
+      { error: msg },
       { status: 500 }
     );
   }

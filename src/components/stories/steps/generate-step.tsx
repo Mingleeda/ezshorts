@@ -6,69 +6,84 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   ArrowLeft,
-  Download,
+  ArrowRight,
   Film,
-  Type,
-  Music,
-  Mic,
   Loader2,
   Sparkles,
   ChevronDown,
   ChevronUp,
   Check,
+  RefreshCw,
   Play,
 } from "lucide-react";
 import type { StoryProject, Scene } from "@/types";
 import { buildAllEnglishPrompts } from "@/lib/prompts/scenario";
+import type { WizardState } from "../stories-wizard";
 
 interface GenerateStepProps {
   project: Partial<StoryProject>;
-  referenceImageUrl?: string;
-  referenceUploadId?: string;
+  onUpdate: (updates: Partial<StoryProject>) => void;
+  wizardState: WizardState;
+  onWizardStateUpdate: (updates: Partial<WizardState>) => void;
   onBack: () => void;
   onNext: () => void;
-  onVideosGenerated?: (videos: { sceneId: string; videoUrl: string }[]) => void;
 }
 
-type ClipStatus = "pending" | "generating" | "completed" | "failed";
+type SceneStatus = "idle" | "generating" | "completed" | "failed";
 
-interface ClipResult {
-  sceneId: string;
-  clipIndex: number;
-  status: ClipStatus;
+interface SceneResult {
+  status: SceneStatus;
   videoUrl?: string;
+  sceneImageUrl?: string;
   error?: string;
 }
 
 export function GenerateStep({
   project,
-  referenceImageUrl,
-  referenceUploadId,
+  onUpdate,
+  wizardState,
+  onWizardStateUpdate,
   onBack,
   onNext,
-  onVideosGenerated,
 }: GenerateStepProps) {
   const [scenes, setScenes] = useState<Scene[]>(project.scenes ?? []);
-  const [promptsGenerated, setPromptsGenerated] = useState(false);
+  const [promptsGenerated, setPromptsGenerated] = useState(
+    wizardState.promptsGenerated
+  );
   const [isGeneratingPrompts, setIsGeneratingPrompts] = useState(false);
   const [expandedPrompt, setExpandedPrompt] = useState<string | null>(null);
-  const [clipResults, setClipResults] = useState<ClipResult[]>([]);
-  const [isGeneratingVideos, setIsGeneratingVideos] = useState(false);
-  const [currentScene, setCurrentScene] = useState<number>(-1);
+
+  const [sceneResults, setSceneResults] = useState<Record<string, SceneResult>>(
+    () => {
+      const initial: Record<string, SceneResult> = {};
+      wizardState.generatedVideos.forEach((v) => {
+        initial[v.sceneId] = {
+          status: "completed",
+          videoUrl: v.videoUrl,
+          sceneImageUrl: v.sceneImageUrl,
+        };
+      });
+      return initial;
+    }
+  );
 
   useEffect(() => {
     if (!promptsGenerated && scenes.length > 0) {
       generatePrompts();
     }
   }, []);
+
+  useEffect(() => {
+    const videos = Object.entries(sceneResults)
+      .filter(([, r]) => r.status === "completed" && r.videoUrl)
+      .map(([sceneId, r]) => ({
+        sceneId,
+        videoUrl: r.videoUrl!,
+        sceneImageUrl: r.sceneImageUrl,
+      }));
+    onWizardStateUpdate({ generatedVideos: videos });
+  }, [sceneResults]);
 
   async function generatePrompts() {
     setIsGeneratingPrompts(true);
@@ -81,25 +96,14 @@ export function GenerateStep({
       });
       const { translated } = await res.json();
 
-      const translatedScenes = scenes.map((s, i) => ({
-        ...s,
-        description: s.description,
-        englishDescription: translated[i] || s.description,
-      }));
-
       const withPrompts = buildAllEnglishPrompts(
-        translatedScenes.map((s) => ({
-          ...s,
-          description: s.englishDescription,
-        })),
+        scenes.map((s, i) => ({ ...s, description: translated[i] || s.description })),
         project.atmosphere ?? "funny",
         project.artStyle ?? "semi_realistic"
-      ).map((s, i) => ({
-        ...s,
-        description: koreanTexts[i],
-      }));
+      ).map((s, i) => ({ ...s, description: koreanTexts[i] }));
 
       setScenes(withPrompts);
+      onUpdate({ scenes: withPrompts });
     } catch {
       const withPrompts = buildAllEnglishPrompts(
         scenes,
@@ -110,19 +114,17 @@ export function GenerateStep({
     }
     setPromptsGenerated(true);
     setIsGeneratingPrompts(false);
+    onWizardStateUpdate({ promptsGenerated: true });
   }
 
-  async function generateVideoForScene(scene: Scene, sceneIdx: number) {
-    setCurrentScene(sceneIdx);
+  async function generateScene(sceneId: string) {
+    const scene = scenes.find((s) => s.id === sceneId);
+    if (!scene) return;
 
-    setClipResults((prev) => [
+    setSceneResults((prev) => ({
       ...prev,
-      {
-        sceneId: scene.id,
-        clipIndex: 0,
-        status: "generating",
-      },
-    ]);
+      [sceneId]: { status: "generating" },
+    }));
 
     try {
       const res = await fetch("/api/videos/generate", {
@@ -130,7 +132,7 @@ export function GenerateStep({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: scene.prompt,
-          referenceUploadId: referenceUploadId || undefined,
+          referenceUploadId: wizardState.referenceUploadId || undefined,
           model: "kling3_0_turbo",
           aspectRatio: "9:16",
           duration: Math.min(scene.duration, 10),
@@ -138,59 +140,38 @@ export function GenerateStep({
       });
       const data = await res.json();
 
-      setClipResults((prev) =>
-        prev.map((cr) =>
-          cr.sceneId === scene.id && cr.clipIndex === 0
-            ? {
-                ...cr,
-                status: data.videoUrl ? "completed" : "failed",
-                videoUrl: data.videoUrl,
-                error: data.error,
-              }
-            : cr
-        )
-      );
+      setSceneResults((prev) => ({
+        ...prev,
+        [sceneId]: {
+          status: data.videoUrl ? "completed" : "failed",
+          videoUrl: data.videoUrl,
+          sceneImageUrl: data.sceneImageUrl,
+          error: data.error,
+        },
+      }));
     } catch {
-      setClipResults((prev) =>
-        prev.map((cr) =>
-          cr.sceneId === scene.id && cr.clipIndex === 0
-            ? { ...cr, status: "failed", error: "네트워크 에러" }
-            : cr
-        )
-      );
+      setSceneResults((prev) => ({
+        ...prev,
+        [sceneId]: { status: "failed", error: "네트워크 에러" },
+      }));
     }
   }
 
-  async function generateAllVideos() {
-    setIsGeneratingVideos(true);
-    setClipResults([]);
-
-    const results: { sceneId: string; videoUrl: string }[] = [];
-    for (let i = 0; i < scenes.length; i++) {
-      await generateVideoForScene(scenes[i], i);
+  async function generateAll() {
+    for (const scene of scenes) {
+      if (sceneResults[scene.id]?.status !== "completed") {
+        await generateScene(scene.id);
+      }
     }
-
-    setIsGeneratingVideos(false);
-    setCurrentScene(-1);
   }
 
-  useEffect(() => {
-    if (allDone && completedClips > 0) {
-      const videos = clipResults
-        .filter((cr) => cr.videoUrl)
-        .map((cr) => ({ sceneId: cr.sceneId, videoUrl: cr.videoUrl! }));
-      onVideosGenerated?.(videos);
-    }
-  }, [clipResults]);
-
-  const totalClips = scenes.reduce((sum, s) => sum + s.clips.length, 0);
-  const totalDuration = scenes.reduce((sum, s) => sum + s.duration, 0);
-  const completedClips = clipResults.filter(
-    (cr) => cr.status === "completed"
+  const completedCount = Object.values(sceneResults).filter(
+    (r) => r.status === "completed"
   ).length;
-  const allDone =
-    clipResults.length > 0 &&
-    clipResults.every((cr) => cr.status === "completed" || cr.status === "failed");
+  const isAnyGenerating = Object.values(sceneResults).some(
+    (r) => r.status === "generating"
+  );
+  const allDone = completedCount === scenes.length && scenes.length > 0;
 
   if (isGeneratingPrompts) {
     return (
@@ -198,9 +179,7 @@ export function GenerateStep({
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
         <div className="text-center">
           <p className="font-medium">영어 프롬프트를 생성하고 있어요</p>
-          <p className="text-sm text-muted-foreground mt-1">
-            한국어 시나리오 → 영어 프롬프트 자동 변환 중...
-          </p>
+          <p className="text-sm text-muted-foreground mt-1">한국어 → 영어 번역 + 프롬프트 구성 중...</p>
         </div>
       </div>
     );
@@ -208,122 +187,41 @@ export function GenerateStep({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold mb-1">영상 생성</h1>
-        <p className="text-muted-foreground">
-          {scenes.length}개 씬의 영어 프롬프트가 준비되었습니다
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold mb-1">영상 생성</h1>
+          <p className="text-muted-foreground">
+            씬별로 개별 생성하거나 전체 생성할 수 있습니다
+          </p>
+        </div>
+        <Button
+          size="sm"
+          onClick={generateAll}
+          disabled={isAnyGenerating || allDone}
+          className="gap-1.5"
+        >
+          {isAnyGenerating ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Film className="h-3.5 w-3.5" />
+          )}
+          {isAnyGenerating
+            ? "생성 중..."
+            : allDone
+              ? "전체 완료"
+              : "전체 생성"}
+        </Button>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Sparkles className="h-4 w-4" />
-            씬별 프롬프트
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {scenes.map((scene, index) => {
-            const clip = clipResults.find((cr) => cr.sceneId === scene.id);
-            return (
-              <div key={scene.id} className="rounded-lg border p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">씬 {index + 1}</span>
-                    <Badge variant="outline" className="text-[10px]">
-                      {scene.duration}초
-                    </Badge>
-                    {clip?.status === "generating" && (
-                      <Badge className="text-[10px] gap-1 bg-blue-500">
-                        <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                        생성 중
-                      </Badge>
-                    )}
-                    {clip?.status === "completed" && (
-                      <Badge className="text-[10px] gap-1 bg-green-500">
-                        <Check className="h-2.5 w-2.5" />
-                        완료
-                      </Badge>
-                    )}
-                    {clip?.status === "failed" && (
-                      <Badge variant="destructive" className="text-[10px]">
-                        실패
-                      </Badge>
-                    )}
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0"
-                    onClick={() =>
-                      setExpandedPrompt(
-                        expandedPrompt === scene.id ? null : scene.id
-                      )
-                    }
-                  >
-                    {expandedPrompt === scene.id ? (
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    ) : (
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    )}
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {scene.description}
-                </p>
-                <div className="flex flex-wrap gap-1">
-                  {scene.promptTags.map((tag) => (
-                    <Badge
-                      key={tag}
-                      variant="secondary"
-                      className="text-[10px] font-normal"
-                    >
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
-                {expandedPrompt === scene.id && (
-                  <Textarea
-                    value={scene.prompt}
-                    onChange={(e) =>
-                      setScenes((prev) =>
-                        prev.map((s) =>
-                          s.id === scene.id
-                            ? { ...s, prompt: e.target.value }
-                            : s
-                        )
-                      )
-                    }
-                    rows={3}
-                    className="text-xs font-mono resize-none mt-1"
-                  />
-                )}
-                {clip?.videoUrl && (
-                  <div className="mt-2">
-                    <video
-                      src={clip.videoUrl}
-                      controls
-                      className="w-full rounded-lg max-h-64 bg-black"
-                    />
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </CardContent>
-      </Card>
-
-      {isGeneratingVideos && (
+      {isAnyGenerating && (
         <Card className="border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/30">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
               <div>
-                <p className="text-sm font-medium">
-                  영상 생성 중... (씬 {currentScene + 1}/{scenes.length})
-                </p>
+                <p className="text-sm font-medium">영상 생성 중...</p>
                 <p className="text-xs text-muted-foreground">
-                  씬당 1~3분 소요 · 완료: {completedClips}/{scenes.length}
+                  씬 이미지 생성 → 영상 변환 · 씬당 2~4분 소요 · 완료: {completedCount}/{scenes.length}
                 </p>
               </div>
             </div>
@@ -331,82 +229,136 @@ export function GenerateStep({
         </Card>
       )}
 
-      <div className="flex justify-center">
-        <Button
-          size="lg"
-          className="gap-2 px-8"
-          onClick={generateAllVideos}
-          disabled={isGeneratingVideos || !promptsGenerated}
-        >
-          {isGeneratingVideos ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
-          ) : allDone ? (
-            <Check className="h-5 w-5" />
-          ) : (
-            <Film className="h-5 w-5" />
-          )}
-          {isGeneratingVideos
-            ? "생성 중..."
-            : allDone
-              ? "다시 생성하기"
-              : "영상 생성하기"}
-        </Button>
+      <div className="space-y-3">
+        {scenes.map((scene, index) => {
+          const result = sceneResults[scene.id];
+          const status = result?.status ?? "idle";
+
+          return (
+            <Card key={scene.id}>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CardTitle className="text-sm">씬 {index + 1}</CardTitle>
+                    <Badge variant="outline" className="text-[10px]">
+                      {scene.duration}초
+                    </Badge>
+                    {status === "generating" && (
+                      <Badge className="text-[10px] gap-1 bg-blue-500">
+                        <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                        생성 중
+                      </Badge>
+                    )}
+                    {status === "completed" && (
+                      <Badge className="text-[10px] gap-1 bg-green-500">
+                        <Check className="h-2.5 w-2.5" />
+                        완료
+                      </Badge>
+                    )}
+                    {status === "failed" && (
+                      <Badge variant="destructive" className="text-[10px]">
+                        실패
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0"
+                      onClick={() =>
+                        setExpandedPrompt(expandedPrompt === scene.id ? null : scene.id)
+                      }
+                    >
+                      {expandedPrompt === scene.id ? (
+                        <ChevronUp className="h-3.5 w-3.5" />
+                      ) : (
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-3">
+                <p className="text-xs text-muted-foreground">{scene.description}</p>
+
+                <div className="flex flex-wrap gap-1">
+                  {scene.promptTags.map((tag) => (
+                    <Badge key={tag} variant="secondary" className="text-[10px] font-normal">
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+
+                {expandedPrompt === scene.id && (
+                  <Textarea
+                    value={scene.prompt}
+                    onChange={(e) =>
+                      setScenes((prev) =>
+                        prev.map((s) =>
+                          s.id === scene.id ? { ...s, prompt: e.target.value } : s
+                        )
+                      )
+                    }
+                    rows={3}
+                    className="text-xs font-mono resize-none"
+                  />
+                )}
+
+                {result?.videoUrl && (
+                  <video
+                    src={result.videoUrl}
+                    controls
+                    className="w-full rounded-lg max-h-64 bg-black"
+                  />
+                )}
+
+                {result?.error && (
+                  <p className="text-xs text-destructive">{result.error}</p>
+                )}
+
+                <div className="flex gap-2">
+                  {status === "idle" && (
+                    <Button
+                      size="sm"
+                      className="text-xs h-7 gap-1"
+                      onClick={() => generateScene(scene.id)}
+                      disabled={isAnyGenerating}
+                    >
+                      <Play className="h-3 w-3" />
+                      생성
+                    </Button>
+                  )}
+                  {(status === "completed" || status === "failed") && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-xs h-7 gap-1"
+                      onClick={() => generateScene(scene.id)}
+                      disabled={isAnyGenerating}
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      재생성
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Card className="p-3">
-          <div className="flex items-center gap-2 mb-2">
-            <Type className="h-4 w-4 text-muted-foreground" />
-            <span className="text-xs font-medium">자막</span>
-          </div>
-          <Badge variant="secondary" className="text-xs">자동 생성</Badge>
-        </Card>
-        <Card className="p-3">
-          <div className="flex items-center gap-2 mb-2">
-            <Mic className="h-4 w-4 text-muted-foreground" />
-            <span className="text-xs font-medium">나레이션</span>
-          </div>
-          <Badge variant="secondary" className="text-xs">AI 음성</Badge>
-        </Card>
-        <Card className="p-3">
-          <div className="flex items-center gap-2 mb-2">
-            <Music className="h-4 w-4 text-muted-foreground" />
-            <span className="text-xs font-medium">BGM</span>
-          </div>
-          <Badge variant="secondary" className="text-xs">자동 선택</Badge>
-        </Card>
-        <Card className="p-3">
-          <div className="flex items-center gap-2 mb-2">
-            <Film className="h-4 w-4 text-muted-foreground" />
-            <span className="text-xs font-medium">전환</span>
-          </div>
-          <Select defaultValue="fade">
-            <SelectTrigger className="h-7 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="cut">컷</SelectItem>
-              <SelectItem value="fade">페이드</SelectItem>
-              <SelectItem value="dissolve">디졸브</SelectItem>
-            </SelectContent>
-          </Select>
-        </Card>
-      </div>
-
-      {allDone && completedClips > 0 && (
-        <div className="flex justify-center">
-          <Button size="lg" onClick={onNext} className="gap-2 px-8">
-            <Film className="h-5 w-5" />
-            합성 & 편집으로
-          </Button>
-        </div>
-      )}
-
-      <div className="flex justify-start">
+      <div className="flex justify-between">
         <Button variant="outline" onClick={onBack} className="gap-1.5">
           <ArrowLeft className="h-4 w-4" />
           이전
         </Button>
+        {allDone && (
+          <Button onClick={onNext} className="gap-1.5">
+            합성 & 편집으로
+            <ArrowRight className="h-4 w-4" />
+          </Button>
+        )}
       </div>
     </div>
   );
