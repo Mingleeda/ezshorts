@@ -292,6 +292,7 @@ export function buildAllEnglishPrompts(
         ...(customKeywords.length > 0 ? [`keywords: ${customKeywords.join(", ")}`] : []),
         "vertical 9:16 aspect ratio, high quality, 4K, detailed",
         "maintain exact same character identity and appearance throughout all scenes",
+        "only show characters already established in the story, do not add new people unless they are background extras",
         "absolutely no text, no subtitles, no captions, no watermark, no words, no letters, no writing on screen",
       ].join(", "),
       promptTags: existingTags,

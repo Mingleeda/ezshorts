@@ -144,7 +144,7 @@ async function generateSceneImage(
 
   if (referenceUploadId) {
     const charPrompt = cleanPromptForShell(
-      `${prompt}. Keep exact same character faces, hair, clothing from reference. Only change scene and action. No text, no subtitles, no watermark.`
+      `${prompt}. Keep exact same character faces, hair, clothing from reference. Only change scene and action. Do not add new characters that are not in the reference image unless they are background extras. No text, no subtitles, no watermark.`
     );
     const stdout = await runHfCommand([
       "generate", "create", "flux_kontext",
