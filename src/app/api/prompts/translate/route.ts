@@ -19,27 +19,52 @@ async function translateChunk(text: string): Promise<string> {
   return translated || text;
 }
 
-async function translatePreservingDialogue(text: string): Promise<string> {
-  const dialoguePattern = /([""''])(.*?)\1|(")(.*?)(")|(')(.*?)(')/g;
-
+function extractDialogues(text: string): { cleaned: string; dialogues: { placeholder: string; original: string }[] } {
   const dialogues: { placeholder: string; original: string }[] = [];
   let index = 0;
 
-  const withPlaceholders = text.replace(dialoguePattern, (match) => {
-    const placeholder = `__DIALOGUE_${index}__`;
-    dialogues.push({ placeholder, original: match });
-    index++;
-    return placeholder;
-  });
+  const patterns = [
+    /“([^”]*)”/g,
+    /„([^”]*)”/g,
+    /‘([^’]*)’/g,
+    /"([^"]*)"/g,
+    /'([^']*)'/g,
+  ];
 
-  const translated = await translateChunk(withPlaceholders);
-
-  let result = translated;
-  for (const { placeholder, original } of dialogues) {
-    result = result.replace(placeholder, original);
+  let result = text;
+  for (const pattern of patterns) {
+    result = result.replace(pattern, (match) => {
+      const placeholder = `DLGKEEP${index}DLGKEEP`;
+      dialogues.push({ placeholder, original: match });
+      index++;
+      return placeholder;
+    });
   }
 
+  return { cleaned: result, dialogues };
+}
+
+function restoreDialogues(text: string, dialogues: { placeholder: string; original: string }[]): string {
+  let result = text;
+  for (const { placeholder, original } of dialogues) {
+    result = result.replace(placeholder, original);
+    const upperPlaceholder = placeholder.toUpperCase();
+    result = result.replace(upperPlaceholder, original);
+    const spacedPlaceholder = placeholder.split("").join(" ");
+    result = result.replace(spacedPlaceholder, original);
+  }
   return result;
+}
+
+async function translatePreservingDialogue(text: string): Promise<string> {
+  const { cleaned, dialogues } = extractDialogues(text);
+
+  if (dialogues.length === 0) {
+    return translateChunk(text);
+  }
+
+  const translated = await translateChunk(cleaned);
+  return restoreDialogues(translated, dialogues);
 }
 
 export async function POST(request: NextRequest) {
