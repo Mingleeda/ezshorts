@@ -21,6 +21,7 @@ import {
   Check,
   Clock,
   Lightbulb,
+  Plus,
 } from "lucide-react";
 import type { StoryProject, Scene } from "@/types";
 import { splitStoryIntoScenes } from "@/lib/prompts/scenario";
@@ -114,6 +115,26 @@ export function ScenarioStep({
         s.id === sceneId ? { ...s, duration: clamped } : s
       )
     );
+  };
+
+  const addScene = (afterIndex: number) => {
+    const newId = `scene-${Date.now()}`;
+    const newScene: Scene = {
+      id: newId,
+      order: afterIndex + 1,
+      description: "",
+      prompt: "",
+      promptTags: [],
+      clips: [{ id: `clip-${newId}-0`, sceneId: newId, order: 0, duration: 5, status: "pending" }],
+      duration: 5,
+    };
+    setScenes((prev) => {
+      const next = [...prev];
+      next.splice(afterIndex + 1, 0, newScene);
+      return next;
+    });
+    setEditingScene(newId);
+    setEditText("");
   };
 
   const removeScene = (id: string) => {
@@ -289,6 +310,14 @@ export function ScenarioStep({
             </Card>
           );
         })}
+
+        <button
+          onClick={() => addScene(scenes.length - 1)}
+          className="w-full rounded-lg border border-dashed p-3 text-sm text-muted-foreground hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+        >
+          <Plus className="h-4 w-4" />
+          씬 추가
+        </button>
       </div>
 
       <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground flex items-start gap-2">
