@@ -20,9 +20,17 @@ const STEPS = [
   { id: "compose", label: "합성 & 편집" },
 ];
 
+export interface CharacterRef {
+  name: string;
+  imageUrl: string;
+  uploadId: string;
+}
+
 export interface WizardState {
   referenceImageUrl: string;
   referenceUploadId: string;
+  characterRefs: CharacterRef[];
+  characters: string[];
   generatedVideos: { sceneId: string; videoUrl: string; sceneImageUrl?: string }[];
   promptsGenerated: boolean;
   voiceAssignments: { characterName: string; voiceId: string; voiceName: string; gender: string }[];
@@ -41,6 +49,8 @@ export function StoriesWizard() {
   const [wizardState, setWizardState] = useState<WizardState>({
     referenceImageUrl: "",
     referenceUploadId: "",
+    characterRefs: [],
+    characters: [],
     generatedVideos: [],
     promptsGenerated: false,
     voiceAssignments: [],
@@ -97,6 +107,8 @@ export function StoriesWizard() {
           <ScenarioStep
             project={project}
             onUpdate={updateProject}
+            wizardState={wizardState}
+            onWizardStateUpdate={updateWizardState}
             onNext={goNext}
             onBack={goBack}
           />

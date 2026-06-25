@@ -34,9 +34,12 @@ import {
 } from "@/lib/templates";
 import type { StoryProject, Scene } from "@/types";
 import { splitStoryIntoScenes } from "@/lib/prompts/scenario";
+import type { WizardState } from "../stories-wizard";
 
 interface ScenarioStepProps {
   project: Partial<StoryProject>;
+  wizardState?: WizardState;
+  onWizardStateUpdate?: (updates: Partial<WizardState>) => void;
   onUpdate: (updates: Partial<StoryProject>) => void;
   onNext: () => void;
   onBack: () => void;
@@ -47,6 +50,7 @@ export function ScenarioStep({
   onUpdate,
   onNext,
   onBack,
+  onWizardStateUpdate,
 }: ScenarioStepProps) {
   const [scenes, setScenes] = useState<Scene[]>(project.scenes ?? []);
   const [editingScene, setEditingScene] = useState<string | null>(null);
@@ -84,6 +88,9 @@ export function ScenarioStep({
         }),
       });
       const data = await res.json();
+      if (data.characters && onWizardStateUpdate) {
+        onWizardStateUpdate({ characters: data.characters });
+      }
       if (data.scenes && !data.fallback) {
         const scenesWithoutPrompts = data.scenes.map((s: Scene) => ({
           ...s,

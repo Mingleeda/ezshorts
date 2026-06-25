@@ -17,10 +17,16 @@ interface VoiceAssignment {
   gender: string;
 }
 
+interface CharacterRefInput {
+  name: string;
+  uploadId: string;
+}
+
 interface GenerateVideoRequest {
   prompt: string;
   sceneDescription: string;
   referenceUploadId?: string;
+  characterRefs?: CharacterRefInput[];
   voiceAssignments?: VoiceAssignment[];
   model?: string;
   aspectRatio?: string;
@@ -135,6 +141,7 @@ async function generateTTS(
 
 async function generateSceneImage(
   prompt: string,
+  characterRefs: CharacterRefInput[],
   referenceUploadId: string | undefined,
   aspectRatio: string
 ): Promise<string> {
@@ -142,14 +149,22 @@ async function generateSceneImage(
     `${prompt}. No text, no subtitles, no captions, no watermark, no words, no letters.`
   );
 
-  if (referenceUploadId) {
+  const refIds = characterRefs.length > 0
+    ? characterRefs.map((r) => r.uploadId)
+    : referenceUploadId ? [referenceUploadId] : [];
+
+  if (refIds.length > 0) {
+    const charNames = characterRefs.map((r) => r.name).join(", ");
     const charPrompt = cleanPromptForShell(
-      `${prompt}. Keep exact same character faces, hair, clothing from reference. Only change scene and action. Do not add new characters that are not in the reference image unless they are background extras. No text, no subtitles, no watermark.`
+      `${prompt}. Keep exact same character faces, hair, clothing from the reference images (${charNames || "characters"}). Each character must look identical to their reference portrait. Only change scene and action. Do not add new characters unless they are background extras. No text, no subtitles, no watermark.`
     );
+    const inputImagesJson = JSON.stringify(
+      refIds.map((id) => ({ id, type: "media_input" }))
+    ).replace(/"/g, '\\"');
     const stdout = await runHfCommand([
       "generate", "create", "flux_kontext",
       `--prompt`, `"${charPrompt}"`,
-      `--input_images`, `'[{"id":"${referenceUploadId}","type":"media_input"}]'`,
+      `--input_images`, `"${inputImagesJson}"`,
       `--aspect_ratio`, `"${aspectRatio}"`,
       `--wait`, `--json`,
     ]);
@@ -179,6 +194,7 @@ export async function POST(request: NextRequest) {
     prompt,
     sceneDescription = "",
     referenceUploadId,
+    characterRefs = [],
     voiceAssignments = [],
     model = "seedance_2_0",
     aspectRatio = "9:16",
@@ -186,9 +202,10 @@ export async function POST(request: NextRequest) {
   } = body;
 
   try {
-    // Step 1: Generate scene image
+    // Step 1: Generate scene image with character references
     const sceneImageUrl = await generateSceneImage(
       prompt,
+      characterRefs,
       referenceUploadId,
       aspectRatio
     );

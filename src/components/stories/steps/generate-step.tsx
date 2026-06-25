@@ -188,6 +188,7 @@ export function GenerateStep({
           prompt: scene.prompt,
           sceneDescription: scene.description,
           referenceUploadId: wizardState.referenceUploadId || undefined,
+          characterRefs: wizardState.characterRefs.map((r) => ({ name: r.name, uploadId: r.uploadId })),
           voiceAssignments: wizardState.voiceAssignments.filter((v) => v.voiceId),
           model: "seedance_2_0",
           aspectRatio: "9:16",

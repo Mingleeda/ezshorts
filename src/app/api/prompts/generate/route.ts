@@ -100,7 +100,8 @@ export async function POST(request: NextRequest) {
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
           const scenes = buildScenes(parsed, targetDuration);
-          return NextResponse.json({ scenes, source: "ai" });
+          const characters = parsed.characters ?? [];
+          return NextResponse.json({ scenes, characters, source: "ai" });
         }
       }
     } catch (error) {
