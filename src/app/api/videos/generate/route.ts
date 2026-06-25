@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
       `--aspect_ratio`, `"${aspectRatio}"`,
       `--duration`, `${duration}`,
       `--mode`, `fast`,
-      `--generate_audio`, `false`,
+      `--generate_audio`, `true`,
       `--wait`, `--json`,
     ]);
     const results = JSON.parse(stdout);
