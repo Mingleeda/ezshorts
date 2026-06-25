@@ -109,10 +109,11 @@ function splitByContext(text: string, targetCount: number): string[] {
   const contextBreaks = findContextBreaks(segments);
 
   if (contextBreaks.length >= targetCount - 1) {
-    return groupByBreaks(segments, contextBreaks, targetCount);
+    const shuffled = shuffleBreaks(contextBreaks);
+    return groupByBreaks(segments, shuffled, targetCount);
   }
 
-  return distributeByMeaning(segments, targetCount);
+  return distributeByMeaning(segments, targetCount, true);
 }
 
 function findContextBreaks(segments: string[]): number[] {
@@ -158,21 +159,36 @@ function groupByBreaks(
   return groups.map((g) => g.join(" "));
 }
 
+function shuffleBreaks(breaks: number[]): number[] {
+  if (breaks.length <= 1) return breaks;
+  const copy = [...breaks];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy.sort((a, b) => a - b);
+}
+
 function selectEvenlySpaced(arr: number[], count: number): number[] {
   if (arr.length <= count) return arr;
+  const offset = Math.floor(Math.random() * Math.max(1, arr.length - count));
   const step = arr.length / count;
   const result: number[] = [];
   for (let i = 0; i < count; i++) {
-    result.push(arr[Math.round(i * step)]);
+    const idx = Math.min(Math.round(i * step + offset * 0.3), arr.length - 1);
+    if (!result.includes(arr[idx])) result.push(arr[idx]);
   }
-  return result;
+  return result.slice(0, count);
 }
 
 function distributeByMeaning(
   segments: string[],
-  targetCount: number
+  targetCount: number,
+  randomize: boolean = false
 ): string[] {
-  const perGroup = Math.ceil(segments.length / targetCount);
+  const basePerGroup = Math.ceil(segments.length / targetCount);
+  const variation = randomize ? Math.floor(Math.random() * 2) : 0;
+  const perGroup = Math.max(1, basePerGroup + (Math.random() > 0.5 ? variation : -variation));
   const result: string[] = [];
 
   for (let i = 0; i < targetCount; i++) {
