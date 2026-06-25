@@ -16,6 +16,8 @@ import {
   Check,
   RefreshCw,
   Play,
+  Pencil,
+  Languages,
 } from "lucide-react";
 import type { StoryProject, Scene } from "@/types";
 import { buildAllEnglishPrompts } from "@/lib/prompts/scenario";
@@ -53,6 +55,9 @@ export function GenerateStep({
   );
   const [isGeneratingPrompts, setIsGeneratingPrompts] = useState(false);
   const [expandedPrompt, setExpandedPrompt] = useState<string | null>(null);
+  const [editingScene, setEditingScene] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
+  const [retranslating, setRetranslating] = useState<string | null>(null);
 
   const [sceneResults, setSceneResults] = useState<Record<string, SceneResult>>(
     () => {
@@ -115,6 +120,53 @@ export function GenerateStep({
     setPromptsGenerated(true);
     setIsGeneratingPrompts(false);
     onWizardStateUpdate({ promptsGenerated: true });
+  }
+
+  function startEditScene(scene: Scene) {
+    setEditingScene(scene.id);
+    setEditText(scene.description);
+  }
+
+  async function saveAndRetranslate(sceneId: string) {
+    setRetranslating(sceneId);
+    setEditingScene(null);
+
+    const newDescription = editText;
+    try {
+      const res = await fetch("/api/prompts/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ texts: [newDescription] }),
+      });
+      const { translated } = await res.json();
+      const englishDesc = translated[0] || newDescription;
+
+      const updatedScene: Scene = {
+        ...scenes.find((s) => s.id === sceneId)!,
+        description: newDescription,
+      };
+
+      const [rebuilt] = buildAllEnglishPrompts(
+        [{ ...updatedScene, description: englishDesc }],
+        project.atmosphere ?? "funny",
+        project.artStyle ?? "semi_realistic"
+      );
+
+      setScenes((prev) =>
+        prev.map((s) =>
+          s.id === sceneId
+            ? { ...s, description: newDescription, prompt: rebuilt.prompt, promptTags: rebuilt.promptTags }
+            : s
+        )
+      );
+    } catch {
+      setScenes((prev) =>
+        prev.map((s) =>
+          s.id === sceneId ? { ...s, description: newDescription } : s
+        )
+      );
+    }
+    setRetranslating(null);
   }
 
   async function generateScene(sceneId: string) {
@@ -280,7 +332,55 @@ export function GenerateStep({
                 </div>
               </CardHeader>
               <CardContent className="pt-0 space-y-3">
-                <p className="text-xs text-muted-foreground">{scene.description}</p>
+                {editingScene === scene.id ? (
+                  <div className="space-y-2">
+                    <p className="text-[10px] text-muted-foreground">씬 설명 수정 (한국어)</p>
+                    <Textarea
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      rows={3}
+                      className="text-sm resize-none"
+                    />
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs h-7"
+                        onClick={() => setEditingScene(null)}
+                      >
+                        취소
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="text-xs h-7 gap-1"
+                        onClick={() => saveAndRetranslate(scene.id)}
+                      >
+                        <Languages className="h-3 w-3" />
+                        저장 & 재번역
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2">
+                    <p className="text-xs text-muted-foreground flex-1">{scene.description}</p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0 shrink-0"
+                      onClick={() => startEditScene(scene)}
+                      disabled={status === "generating"}
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                  </div>
+                )}
+
+                {retranslating === scene.id && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    영어 프롬프트 재생성 중...
+                  </div>
+                )}
 
                 <div className="flex flex-wrap gap-1">
                   {scene.promptTags.map((tag) => (
@@ -291,18 +391,21 @@ export function GenerateStep({
                 </div>
 
                 {expandedPrompt === scene.id && (
-                  <Textarea
-                    value={scene.prompt}
-                    onChange={(e) =>
-                      setScenes((prev) =>
-                        prev.map((s) =>
-                          s.id === scene.id ? { ...s, prompt: e.target.value } : s
+                  <div className="space-y-1">
+                    <p className="text-[10px] text-muted-foreground">영어 프롬프트 (직접 수정 가능)</p>
+                    <Textarea
+                      value={scene.prompt}
+                      onChange={(e) =>
+                        setScenes((prev) =>
+                          prev.map((s) =>
+                            s.id === scene.id ? { ...s, prompt: e.target.value } : s
+                          )
                         )
-                      )
-                    }
-                    rows={3}
-                    className="text-xs font-mono resize-none"
-                  />
+                      }
+                      rows={3}
+                      className="text-xs font-mono resize-none"
+                    />
+                  </div>
                 )}
 
                 {result?.videoUrl && (
