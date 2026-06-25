@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { writeFile, unlink } from "fs/promises";
+import { writeFile, unlink, readFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -35,11 +35,33 @@ async function downloadAndUpload(imageUrl: string): Promise<string> {
   }
 }
 
-function sanitizePrompt(prompt: string): string {
+async function runHfCommand(args: string[]): Promise<string> {
+  const scriptPath = join(tmpdir(), `hf_cmd_${Date.now()}.sh`);
+  const cmd = `${HF_CLI} ${args.join(" ")}`;
+  await writeFile(scriptPath, `#!/bin/bash\n${cmd}\n`, { mode: 0o755 });
+
+  try {
+    const { stdout, stderr } = await execAsync(`bash "${scriptPath}"`, {
+      timeout: 300000,
+    });
+    if (!stdout.trim() && stderr.trim()) {
+      throw new Error(stderr.trim());
+    }
+    return stdout;
+  } finally {
+    await unlink(scriptPath).catch(() => {});
+  }
+}
+
+function cleanPromptForShell(prompt: string): string {
   return prompt
+    .replace(/[""„]/g, '"')
+    .replace(/['']/g, "'")
     .replace(/"/g, '\\"')
-    .replace(/`/g, "\\`")
-    .replace(/\$/g, "\\$");
+    .replace(/`/g, "")
+    .replace(/\$/g, "")
+    .replace(/\n/g, " ")
+    .trim();
 }
 
 async function generateSceneImage(
@@ -47,21 +69,34 @@ async function generateSceneImage(
   referenceUploadId: string | undefined,
   aspectRatio: string
 ): Promise<string> {
-  const noTextPrompt = `${prompt}. Absolutely no text, no subtitles, no captions, no watermark, no words, no letters anywhere in the image.`;
-  const safePrompt = sanitizePrompt(noTextPrompt);
+  const cleanPrompt = cleanPromptForShell(
+    `${prompt}. No text, no subtitles, no captions, no watermark, no words, no letters.`
+  );
 
   if (referenceUploadId) {
-    const charPrompt = `${safePrompt} Keep the exact same character faces, hair, clothing, and body proportions from the reference image. Only change the scene, pose, and background as described. The characters must look identical to the reference.`;
-    const cmd = `${HF_CLI} generate create flux_kontext --prompt "${charPrompt}" --input_images '[{"id":"${referenceUploadId}","type":"media_input"}]' --aspect_ratio "${aspectRatio}" --wait --json`;
-    const { stdout } = await execAsync(cmd, { timeout: 120000 });
+    const charPrompt = cleanPromptForShell(
+      `${prompt}. Keep exact same character faces, hair, clothing from reference. Only change scene and action. No text, no subtitles, no watermark.`
+    );
+    const stdout = await runHfCommand([
+      "generate", "create", "flux_kontext",
+      `--prompt`, `"${charPrompt}"`,
+      `--input_images`, `'[{"id":"${referenceUploadId}","type":"media_input"}]'`,
+      `--aspect_ratio`, `"${aspectRatio}"`,
+      `--wait`, `--json`,
+    ]);
     const results = JSON.parse(stdout);
     if (results.length > 0 && results[0].result_url) {
       return results[0].result_url;
     }
   }
 
-  const cmd = `${HF_CLI} generate create recraft_v4_1 --prompt "${safePrompt}" --aspect_ratio "${aspectRatio}" --resolution "1k" --wait --json`;
-  const { stdout } = await execAsync(cmd, { timeout: 120000 });
+  const stdout = await runHfCommand([
+    "generate", "create", "recraft_v4_1",
+    `--prompt`, `"${cleanPrompt}"`,
+    `--aspect_ratio`, `"${aspectRatio}"`,
+    `--resolution`, `"1k"`,
+    `--wait`, `--json`,
+  ]);
   const results = JSON.parse(stdout);
   if (results.length > 0 && results[0].result_url) {
     return results[0].result_url;
@@ -88,13 +123,20 @@ export async function POST(request: NextRequest) {
 
     const sceneUploadId = await downloadAndUpload(sceneImageUrl);
 
-    const videoPrompt = sanitizePrompt(
-      `${prompt}. Animate naturally with subtle motion. No text, no subtitles, no captions, no watermark. Keep exact same character identity.`
+    const videoPrompt = cleanPromptForShell(
+      `${prompt}. Animate naturally with subtle motion. No text, no subtitles. Keep same character identity.`
     );
 
-    const cmd = `${HF_CLI} generate create ${model} --prompt "${videoPrompt}" --image ${sceneUploadId} --aspect_ratio "${aspectRatio}" --duration ${duration} --mode fast --generate_audio false --wait --json`;
-
-    const { stdout } = await execAsync(cmd, { timeout: 300000 });
+    const stdout = await runHfCommand([
+      "generate", "create", model,
+      `--prompt`, `"${videoPrompt}"`,
+      `--image`, sceneUploadId,
+      `--aspect_ratio`, `"${aspectRatio}"`,
+      `--duration`, `${duration}`,
+      `--mode`, `fast`,
+      `--generate_audio`, `false`,
+      `--wait`, `--json`,
+    ]);
     const results = JSON.parse(stdout);
 
     if (results.length > 0 && results[0].result_url) {
