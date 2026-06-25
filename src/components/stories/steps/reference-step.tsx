@@ -35,7 +35,7 @@ function buildReferencePrompt(project: Partial<StoryProject>): string {
   const style = artStyleEn[project.artStyle ?? "semi_realistic"];
   const mood = atmosphereEn[project.atmosphere ?? "funny"];
 
-  return `${style}, ${mood}, character portrait showing the main characters from this story: ${storyText.slice(0, 200)}, vertical 9:16 aspect ratio, high quality, 4K, showing character appearance and scene atmosphere, consistent style`;
+  return `${style}, ${mood}, character portrait showing the main characters from this story: ${storyText.slice(0, 200)}, vertical 9:16 aspect ratio, high quality, 4K, showing character appearance and scene atmosphere, consistent style, absolutely no text, no subtitles, no captions, no watermark, no words, no letters`;
 }
 
 async function generateViaAPI(prompt: string): Promise<string> {

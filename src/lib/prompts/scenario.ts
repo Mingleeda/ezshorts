@@ -222,7 +222,9 @@ export function buildAllEnglishPrompts(
       `${ATMOSPHERE_EN[atmosphere]} mood`,
       narrativeRoles[index],
       `scene: ${scene.description}`,
-      "vertical 9:16 aspect ratio, high quality, 4K, detailed, consistent style",
+      "vertical 9:16 aspect ratio, high quality, 4K, detailed",
+      "maintain exact same character identity and appearance throughout all scenes",
+      "absolutely no text, no subtitles, no captions, no watermark, no words, no letters, no writing on screen",
     ].join(", "),
     promptTags: buildKoreanTags(scene.description, atmosphere, artStyle),
   }));
