@@ -92,14 +92,7 @@ export async function POST(request: NextRequest) {
       `${prompt}. Animate naturally with subtle motion. No text, no subtitles, no captions, no watermark. Keep exact same character identity.`
     );
 
-    let modelArgs = "";
-    if (model === "seedance_2_0") {
-      modelArgs = `--medias '[{"id":"${sceneUploadId}","type":"media_input","role":"start_image"}]' --aspect_ratio "${aspectRatio}" --duration ${duration} --mode fast --generate_audio false`;
-    } else {
-      modelArgs = `--image ${sceneUploadId} --aspect_ratio "${aspectRatio}" --duration ${duration}`;
-    }
-
-    const cmd = `${HF_CLI} generate create ${model} --prompt "${videoPrompt}" ${modelArgs} --wait --json`;
+    const cmd = `${HF_CLI} generate create ${model} --prompt "${videoPrompt}" --image ${sceneUploadId} --aspect_ratio "${aspectRatio}" --duration ${duration} --mode fast --generate_audio false --wait --json`;
 
     const { stdout } = await execAsync(cmd, { timeout: 300000 });
     const results = JSON.parse(stdout);
