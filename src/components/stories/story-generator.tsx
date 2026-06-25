@@ -132,14 +132,27 @@ export function StoryGenerator({ onGenerated, onClose }: StoryGeneratorProps) {
       .join("\n");
 
     try {
-      const res = await fetch("/api/story/generate", {
+      const res = await fetch("https://text.pollinations.ai/openai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({
+          model: "openai",
+          messages: [
+            {
+              role: "system",
+              content:
+                "너는 한국의 인기 유튜브 쇼츠 채널 썰 작가야. 실제 있을법한 현실적이고 몰입감 있는 썰을 반말 구어체로 써. 대화는 큰따옴표로 감싸. 제목이나 설명 없이 썰 본문만 출력해. 줄바꿈으로 문장을 구분해.",
+            },
+            { role: "user", content: prompt },
+          ],
+        }),
       });
       const data = await res.json();
-      if (data.story) {
-        setGeneratedStory(data.story);
+      const story = data.choices?.[0]?.message?.content?.trim();
+      if (story) {
+        setGeneratedStory(story);
+      } else {
+        setGeneratedStory("썰 생성에 실패했습니다. 다시 시도해주세요.");
       }
     } catch {
       setGeneratedStory("썰 생성에 실패했습니다. 다시 시도해주세요.");
