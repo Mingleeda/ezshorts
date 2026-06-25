@@ -262,17 +262,29 @@ export function ComposeStep({ project, videos, onBack }: ComposeStepProps) {
           </div>
           <div className="flex flex-wrap justify-center gap-2">
             {orderedVideos.map((video, i) => (
-              <a
+              <Button
                 key={video.sceneId}
-                href={video.videoUrl}
-                target="_blank"
-                rel="noopener noreferrer"
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={async () => {
+                  try {
+                    const res = await fetch(video.videoUrl);
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `ezshorts_scene_${i + 1}.mp4`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  } catch {
+                    window.open(video.videoUrl, "_blank");
+                  }
+                }}
               >
-                <Button variant="outline" size="sm" className="gap-1.5">
-                  <Download className="h-3.5 w-3.5" />
-                  씬 {i + 1} 다운로드
-                </Button>
-              </a>
+                <Download className="h-3.5 w-3.5" />
+                씬 {i + 1} 다운로드
+              </Button>
             ))}
           </div>
         </CardContent>
