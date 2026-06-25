@@ -132,51 +132,19 @@ export function StoryGenerator({ onGenerated, onClose }: StoryGeneratorProps) {
       .join("\n");
 
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30000);
-
-      const res = await fetch("https://text.pollinations.ai/openai", {
+      const res = await fetch("/api/story/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "openai",
-          messages: [
-            {
-              role: "system",
-              content:
-                "너는 한국의 인기 유튜브 쇼츠 채널 썰 작가야. 실제 있을법한 현실적이고 몰입감 있는 썰을 반말 구어체로 써. 대화는 큰따옴표로 감싸. 제목이나 설명 없이 썰 본문만 출력해. 줄바꿈으로 문장을 구분해.",
-            },
-            { role: "user", content: prompt },
-          ],
-        }),
-        signal: controller.signal,
+        body: JSON.stringify({ prompt }),
       });
-
-      clearTimeout(timeout);
-
-      const text = await res.text();
-      try {
-        const data = JSON.parse(text);
-        const story = data.choices?.[0]?.message?.content?.trim();
-        if (story) {
-          setGeneratedStory(story);
-        } else {
-          setGeneratedStory(text.trim() || "응답을 파싱할 수 없습니다. 다시 시도해주세요.");
-        }
-      } catch {
-        if (text.trim()) {
-          setGeneratedStory(text.trim());
-        } else {
-          setGeneratedStory("빈 응답입니다. 다시 시도해주세요.");
-        }
+      const data = await res.json();
+      if (data.story) {
+        setGeneratedStory(data.story);
+      } else {
+        setGeneratedStory(data.error || "썰 생성에 실패했습니다. 다시 시도해주세요.");
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "";
-      setGeneratedStory(
-        msg.includes("abort")
-          ? "시간이 초과되었습니다. 다시 시도해주세요."
-          : "썰 생성에 실패했습니다. 다시 시도해주세요."
-      );
+    } catch {
+      setGeneratedStory("썰 생성에 실패했습니다. 다시 시도해주세요.");
     }
     setIsGenerating(false);
   }
