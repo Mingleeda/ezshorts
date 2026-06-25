@@ -8,18 +8,21 @@ export function splitStoryIntoScenes(
   artStyle: ArtStyle
 ): Scene[] {
   const sceneCount = estimateSceneCount(targetDuration);
-  const breakdown = calculateSceneBreakdown(targetDuration, sceneCount);
-
   const storyScenes = splitByContext(storyText, sceneCount);
+  const durations = recommendDurations(storyScenes, targetDuration);
 
   return storyScenes.map((description, index) => {
+    const sceneDur = durations[index];
+    const clipsPerScene = Math.max(1, Math.ceil(sceneDur / HIGGSFIELD_MAX_CLIP));
+    const clipDuration = Math.floor(sceneDur / clipsPerScene);
+
     const clips: GeneratedClip[] = Array.from(
-      { length: breakdown.clipsPerScene },
+      { length: clipsPerScene },
       (_, clipIdx) => ({
         id: `clip-${index}-${clipIdx}`,
         sceneId: `scene-${index}`,
         order: clipIdx,
-        duration: breakdown.clipDuration,
+        duration: clipDuration,
         status: "pending" as const,
       })
     );
@@ -31,9 +34,51 @@ export function splitStoryIntoScenes(
       prompt: "",
       promptTags: [],
       clips,
-      duration: breakdown.sceneDuration,
+      duration: sceneDur,
     };
   });
+}
+
+const HIGGSFIELD_MAX_CLIP = 8;
+
+type SceneRole = "opening" | "development" | "climax" | "resolution";
+
+function classifySceneRole(index: number, total: number): SceneRole {
+  if (index === 0) return "opening";
+  if (index === total - 1) return "resolution";
+  if (index >= Math.floor(total * 0.6)) return "climax";
+  return "development";
+}
+
+function recommendDurations(scenes: string[], totalDuration: number): number[] {
+  const weights = scenes.map((desc, i) => {
+    const role = classifySceneRole(i, scenes.length);
+    const lengthWeight = Math.min(desc.length / 50, 2.0);
+
+    const roleWeight: Record<SceneRole, number> = {
+      opening: 0.8,
+      development: 1.0,
+      climax: 1.3,
+      resolution: 0.9,
+    };
+
+    return roleWeight[role] * (0.5 + lengthWeight * 0.5);
+  });
+
+  const totalWeight = weights.reduce((a, b) => a + b, 0);
+  const rawDurations = weights.map((w) => (w / totalWeight) * totalDuration);
+
+  const minDuration = 5;
+  const durations = rawDurations.map((d) => Math.max(minDuration, Math.round(d)));
+
+  const currentTotal = durations.reduce((a, b) => a + b, 0);
+  const diff = totalDuration - currentTotal;
+  if (diff !== 0) {
+    const climaxIdx = scenes.length > 2 ? Math.floor(scenes.length * 0.6) : scenes.length - 1;
+    durations[climaxIdx] = Math.max(minDuration, durations[climaxIdx] + diff);
+  }
+
+  return durations;
 }
 
 function estimateSceneCount(targetDuration: number): number {
