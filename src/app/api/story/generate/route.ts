@@ -1,13 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
-import { writeFile, unlink } from "fs/promises";
-import { join } from "path";
-import { tmpdir } from "os";
-
-const execAsync = promisify(exec);
-const HF_CLI =
-  "/Users/sunminlee/.nvm/versions/node/v20.20.2/lib/node_modules/@higgsfield/cli/vendor/hf";
 
 interface GenerateStoryRequest {
   prompt: string;
@@ -18,32 +9,38 @@ export async function POST(request: NextRequest) {
   const { prompt } = body;
 
   try {
-    const safePrompt = prompt
-      .replace(/"/g, '\\"')
-      .replace(/`/g, "")
-      .replace(/\$/g, "")
-      .replace(/\n/g, "\\n");
+    const res = await fetch("https://text.pollinations.ai/openai", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "openai",
+        messages: [
+          {
+            role: "system",
+            content:
+              "너는 한국의 인기 유튜브 쇼츠 채널 썰 작가야. 실제 있을법한 현실적이고 몰입감 있는 썰을 반말 구어체로 써. 대화는 큰따옴표로 감싸. 제목이나 설명 없이 썰 본문만 출력해. 줄바꿈으로 문장을 구분해.",
+          },
+          { role: "user", content: prompt },
+        ],
+      }),
+    });
 
-    const scriptPath = join(tmpdir(), `hf_story_${Date.now()}.sh`);
-    const cmd = `${HF_CLI} generate create llm_text --prompt "${safePrompt}" --wait --json`;
-    await writeFile(scriptPath, `#!/bin/bash\n${cmd}\n`, { mode: 0o755 });
-
-    const { stdout } = await execAsync(`bash "${scriptPath}"`, { timeout: 60000 });
-    await unlink(scriptPath).catch(() => {});
-
-    const results = JSON.parse(stdout);
-    if (results.length > 0) {
-      const raw = results[0].result_text ?? results[0].result_url ?? "";
-
-      const story = raw
-        .replace(/^(제목|Title|##|#|\*\*).*\n?/gm, "")
-        .replace(/^[\s\n]+|[\s\n]+$/g, "")
-        .trim();
-
-      return NextResponse.json({ story, jobId: results[0].id });
+    if (!res.ok) {
+      throw new Error(`API error: ${res.status}`);
     }
 
-    return NextResponse.json({ error: "썰 생성 실패" }, { status: 500 });
+    const data = await res.json();
+    const story =
+      data.choices?.[0]?.message?.content?.trim() ?? "";
+
+    if (!story) {
+      return NextResponse.json(
+        { error: "썰 생성 실패" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ story });
   } catch (error) {
     console.error("Story generation error:", error);
     const msg = error instanceof Error ? error.message : "썰 생성 실패";
