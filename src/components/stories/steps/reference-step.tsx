@@ -39,7 +39,8 @@ async function uploadToHiggsfield(imageUrl: string): Promise<string> {
 
 function buildCharacterPrompt(
   characterName: string,
-  project: Partial<StoryProject>
+  project: Partial<StoryProject>,
+  customDescription: string = ""
 ): string {
   const artStyleEn: Record<string, string> = {
     semi_realistic: "semi-realistic digital art, detailed and polished",
@@ -49,9 +50,10 @@ function buildCharacterPrompt(
     cinematic: "cinematic photography, dramatic lighting, 35mm film",
   };
   const style = artStyleEn[project.artStyle ?? "semi_realistic"];
-  const storyContext = project.storyText?.slice(0, 150) ?? "";
+  const storyContext = project.storyText?.slice(0, 200) ?? "";
+  const custom = customDescription ? `, appearance details: ${customDescription}` : "";
 
-  return `${style}, character portrait of "${characterName}" from this story: ${storyContext}. Single person portrait, clear face, upper body visible, simple clean background, vertical 9:16, high quality, 4K, absolutely no text, no subtitles, no captions, no watermark`;
+  return `${style}, character portrait of "${characterName}" from this story: ${storyContext}${custom}. Single person portrait, clear face, upper body visible, simple clean background, vertical 9:16, high quality, 4K, absolutely no text, no subtitles, no captions, no watermark`;
 }
 
 interface ReferenceStepProps {
@@ -88,12 +90,15 @@ export function ReferenceStep({
   const [approved, setApproved] = useState<Set<string>>(
     () => new Set(wizardState.characterRefs.map((r) => r.name))
   );
+  const [customPrompts, setCustomPrompts] = useState<Record<string, string>>({});
+  const [editingChar, setEditingChar] = useState<string | null>(null);
 
   async function generateCharacter(name: string) {
     setLoading((prev) => new Set(prev).add(name));
     setApproved((prev) => { const n = new Set(prev); n.delete(name); return n; });
     try {
-      const prompt = buildCharacterPrompt(name, project);
+      const extra = customPrompts[name] ?? "";
+      const prompt = buildCharacterPrompt(name, project, extra);
       const url = await generateViaAPI(prompt);
       const uploadId = await uploadToHiggsfield(url);
       setCharImages((prev) => ({ ...prev, [name]: { url, uploadId } }));
@@ -206,11 +211,28 @@ export function ReferenceStep({
                 )}
               </div>
               <CardContent className="p-3 space-y-2">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between">
                   <Badge variant="outline" className="text-xs">
                     {name}
                   </Badge>
+                  <button
+                    onClick={() => setEditingChar(editingChar === name ? null : name)}
+                    className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {editingChar === name ? "닫기" : "외형 설정"}
+                  </button>
                 </div>
+                {editingChar === name && (
+                  <input
+                    type="text"
+                    placeholder="예: 30대, 긴 머리, 정장, 안경"
+                    value={customPrompts[name] ?? ""}
+                    onChange={(e) =>
+                      setCustomPrompts((prev) => ({ ...prev, [name]: e.target.value }))
+                    }
+                    className="w-full text-xs border rounded-md px-2 py-1.5 bg-background"
+                  />
+                )}
                 <div className="flex gap-1.5">
                   <Button
                     variant={isApproved ? "default" : "outline"}
