@@ -1,12 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
 import type { Atmosphere, ArtStyle, Scene, GeneratedClip } from "@/types";
-import { calculateSceneBreakdown } from "@/lib/prompts/duration";
-
-const execAsync = promisify(exec);
-const HF_CLI =
-  "/Users/sunminlee/.nvm/versions/node/v20.20.2/lib/node_modules/@higgsfield/cli/vendor/hf";
 
 interface GenerateRequest {
   storyText: string;
@@ -16,70 +9,63 @@ interface GenerateRequest {
   sceneCount: number;
 }
 
+function buildScenes(
+  parsed: { scenes: { description: string; duration: number }[] },
+  targetDuration: number
+): Scene[] {
+  return parsed.scenes.map(
+    (s: { description: string; duration: number }, index: number) => {
+      const dur = s.duration || Math.floor(targetDuration / parsed.scenes.length);
+      const clipsPerScene = Math.max(1, Math.ceil(dur / 8));
+      const clips: GeneratedClip[] = Array.from(
+        { length: clipsPerScene },
+        (_, clipIdx) => ({
+          id: `clip-${index}-${clipIdx}`,
+          sceneId: `scene-${index}`,
+          order: clipIdx,
+          duration: Math.floor(dur / clipsPerScene),
+          status: "pending" as const,
+        })
+      );
+      return {
+        id: `scene-${index}`,
+        order: index,
+        description: s.description,
+        prompt: "",
+        promptTags: [],
+        clips,
+        duration: dur,
+      };
+    }
+  );
+}
+
 export async function POST(request: NextRequest) {
   const body: GenerateRequest = await request.json();
-  const { storyText, atmosphere, artStyle, targetDuration, sceneCount } = body;
+  const { storyText, targetDuration, sceneCount } = body;
 
-  const systemPrompt = `You are a video scenario writer. Split the given Korean story into exactly ${sceneCount} scenes for a ${targetDuration}-second short video. Each scene should represent a distinct narrative moment. Respond ONLY in this JSON format, no other text:
-{"scenes":[{"description":"한국어 씬 설명","duration":number}]}
-Rules:
-- descriptions in Korean
-- durations should sum to ${targetDuration}
-- climax scenes get more time
-- opening/ending scenes get less time
-- each scene min 3 seconds, max 20 seconds`;
+  const systemPrompt = `너는 유튜브 쇼츠 영상 시나리오 작가야. 주어진 썰을 정확히 ${sceneCount}개 씬으로 나눠.
 
-  const userPrompt = `다음 썰을 ${sceneCount}개 씬으로 나눠줘. 기승전결에 맞게 자연스럽게 나누고, 각 씬의 적절한 영상 길이(초)를 정해줘:\n\n${storyText}`;
+반드시 아래 JSON 형식으로만 응답해. 다른 텍스트 없이:
+{"scenes":[{"description":"씬 설명","duration":숫자}]}
 
-  try {
-    const fullPrompt = `${systemPrompt}\n\nUser: ${userPrompt}`.replace(/"/g, '\\"').replace(/`/g, "\\`").replace(/\$/g, "\\$");
+규칙:
+- description은 한국어로 작성
+- 각 씬에 등장인물의 대화(큰따옴표)를 최대한 풍부하게 포함
+- 대화가 핵심인 씬은 대사를 여러 줄 넣어도 됨
+- 대화가 없는 씬이라도 인물의 행동, 표정, 분위기를 구체적으로 묘사
+- 원본 썰의 대화를 그대로 살려서 씬에 배치
+- duration 합계는 ${targetDuration}초
+- 클라이맥스 씬은 길게, 도입/결말은 짧게
+- 각 씬 최소 3초, 최대 20초
+- 기승전결 흐름이 자연스럽게 이어져야 함`;
 
-    const cmd = `${HF_CLI} generate create llm_text --prompt "${fullPrompt}" --wait --json`;
-    const { stdout } = await execAsync(cmd, { timeout: 60000 });
-    const results = JSON.parse(stdout);
+  const userPrompt = `다음 썰을 ${sceneCount}개 씬으로 나눠줘. 각 씬마다 등장인물의 대사를 풍부하게 넣어줘:\n\n${storyText}`;
 
-    if (results.length > 0) {
-      const llmOutput = results[0].result_text || results[0].result_url || "";
-      const jsonMatch = llmOutput.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        const scenes: Scene[] = parsed.scenes.map(
-          (s: { description: string; duration: number }, index: number) => {
-            const dur = s.duration || Math.floor(targetDuration / sceneCount);
-            const clipsPerScene = Math.max(1, Math.ceil(dur / 8));
-            const clips: GeneratedClip[] = Array.from(
-              { length: clipsPerScene },
-              (_, clipIdx) => ({
-                id: `clip-${index}-${clipIdx}`,
-                sceneId: `scene-${index}`,
-                order: clipIdx,
-                duration: Math.floor(dur / clipsPerScene),
-                status: "pending" as const,
-              })
-            );
-            return {
-              id: `scene-${index}`,
-              order: index,
-              description: s.description,
-              prompt: "",
-              promptTags: [],
-              clips,
-              duration: dur,
-            };
-          }
-        );
-        return NextResponse.json({ scenes, source: "ai" });
-      }
-    }
-  } catch (error) {
-    console.error("LLM scene generation error:", error);
-  }
-
-  // Fallback: Anthropic API
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (apiKey) {
     try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -94,42 +80,23 @@ Rules:
         }),
       });
 
-      if (response.ok) {
-        const data = await response.json();
+      if (res.ok) {
+        const data = await res.json();
         const content = data.content?.[0]?.text ?? "";
         const jsonMatch = content.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
-          const scenes: Scene[] = parsed.scenes.map(
-            (s: { description: string; duration: number }, index: number) => {
-              const dur = s.duration || Math.floor(targetDuration / sceneCount);
-              const clipsPerScene = Math.max(1, Math.ceil(dur / 8));
-              const clips: GeneratedClip[] = Array.from(
-                { length: clipsPerScene },
-                (_, clipIdx) => ({
-                  id: `clip-${index}-${clipIdx}`,
-                  sceneId: `scene-${index}`,
-                  order: clipIdx,
-                  duration: Math.floor(dur / clipsPerScene),
-                  status: "pending" as const,
-                })
-              );
-              return {
-                id: `scene-${index}`,
-                order: index,
-                description: s.description,
-                prompt: "",
-                promptTags: [],
-                clips,
-                duration: dur,
-              };
-            }
-          );
+          const scenes = buildScenes(parsed, targetDuration);
           return NextResponse.json({ scenes, source: "ai" });
         }
       }
-    } catch {}
+    } catch (error) {
+      console.error("Anthropic scene generation error:", error);
+    }
   }
 
-  return NextResponse.json({ error: "AI unavailable", fallback: true }, { status: 200 });
+  return NextResponse.json(
+    { error: "AI unavailable", fallback: true },
+    { status: 200 }
+  );
 }
