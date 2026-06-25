@@ -56,7 +56,7 @@ interface ReferenceStepProps {
   onUpdate: (updates: Partial<StoryProject>) => void;
   onNext: () => void;
   onBack: () => void;
-  onReferenceGenerated?: (url: string) => void;
+  onReferenceGenerated?: (url: string, uploadId: string) => void;
 }
 
 export function ReferenceStep({
@@ -70,6 +70,17 @@ export function ReferenceStep({
   const [isLoading, setIsLoading] = useState(false);
   const [isApproved, setIsApproved] = useState(false);
   const [isFailed, setIsFailed] = useState(false);
+  const [uploadId, setUploadId] = useState<string | null>(null);
+
+  async function uploadToHiggsfield(url: string): Promise<string> {
+    const res = await fetch("/api/images/upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageUrl: url }),
+    });
+    const data = await res.json();
+    return data.uploadId;
+  }
 
   async function generate() {
     const prompt = buildReferencePrompt(project);
@@ -80,8 +91,10 @@ export function ReferenceStep({
     try {
       const url = await generateViaAPI(prompt);
       setImageUrl(url);
+      const uid = await uploadToHiggsfield(url);
+      setUploadId(uid);
       setIsLoading(false);
-      onReferenceGenerated?.(url);
+      onReferenceGenerated?.(url, uid);
     } catch {
       setIsLoading(false);
       setIsFailed(true);

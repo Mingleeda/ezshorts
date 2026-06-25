@@ -30,6 +30,7 @@ export function StoriesWizard() {
     updatedAt: new Date(),
   });
   const [referenceImageUrl, setReferenceImageUrl] = useState<string>("");
+  const [referenceUploadId, setReferenceUploadId] = useState<string>("");
   const [generatedVideos, setGeneratedVideos] = useState<
     { sceneId: string; videoUrl: string }[]
   >([]);
@@ -88,13 +89,17 @@ export function StoriesWizard() {
             onUpdate={updateProject}
             onNext={goNext}
             onBack={goBack}
-            onReferenceGenerated={setReferenceImageUrl}
+            onReferenceGenerated={(url, uid) => {
+              setReferenceImageUrl(url);
+              setReferenceUploadId(uid);
+            }}
           />
         )}
         {currentStep === 4 && (
           <GenerateStep
             project={project}
             referenceImageUrl={referenceImageUrl}
+            referenceUploadId={referenceUploadId}
             onBack={goBack}
             onNext={goNext}
             onVideosGenerated={setGeneratedVideos}

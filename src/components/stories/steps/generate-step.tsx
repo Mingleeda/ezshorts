@@ -32,6 +32,7 @@ import { buildAllEnglishPrompts } from "@/lib/prompts/scenario";
 interface GenerateStepProps {
   project: Partial<StoryProject>;
   referenceImageUrl?: string;
+  referenceUploadId?: string;
   onBack: () => void;
   onNext: () => void;
   onVideosGenerated?: (videos: { sceneId: string; videoUrl: string }[]) => void;
@@ -50,6 +51,7 @@ interface ClipResult {
 export function GenerateStep({
   project,
   referenceImageUrl,
+  referenceUploadId,
   onBack,
   onNext,
   onVideosGenerated,
@@ -100,6 +102,7 @@ export function GenerateStep({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: scene.prompt,
+          referenceUploadId: referenceUploadId || undefined,
           model: "kling3_0_turbo",
           aspectRatio: "9:16",
           duration: Math.min(scene.duration, 10),
