@@ -18,9 +18,8 @@ interface GenerateVideoRequest {
   duration?: number;
 }
 
-async function uploadImage(imageUrl: string): Promise<string> {
-  const tmpPath = join(tmpdir(), `hf_ref_${Date.now()}.png`);
-
+async function downloadAndUpload(imageUrl: string): Promise<string> {
+  const tmpPath = join(tmpdir(), `hf_scene_${Date.now()}.png`);
   const res = await fetch(imageUrl);
   const buffer = Buffer.from(await res.arrayBuffer());
   await writeFile(tmpPath, buffer);
@@ -30,40 +29,49 @@ async function uploadImage(imageUrl: string): Promise<string> {
       `${HF_CLI} upload create "${tmpPath}" --json`,
       { timeout: 30000 }
     );
-    const data = JSON.parse(stdout);
-    return data.id;
+    return JSON.parse(stdout).id;
   } finally {
     await unlink(tmpPath).catch(() => {});
   }
+}
+
+async function generateSceneImage(prompt: string, aspectRatio: string): Promise<string> {
+  const safePrompt = prompt.replace(/"/g, '\\"').replace(/`/g, "\\`");
+  const cmd = `${HF_CLI} generate create recraft_v4_1 --prompt "${safePrompt}" --aspect_ratio "${aspectRatio}" --resolution "1k" --wait --json`;
+
+  const { stdout } = await execAsync(cmd, { timeout: 120000 });
+  const results = JSON.parse(stdout);
+
+  if (results.length > 0 && results[0].result_url) {
+    return results[0].result_url;
+  }
+  throw new Error("Scene image generation failed");
 }
 
 export async function POST(request: NextRequest) {
   const body: GenerateVideoRequest = await request.json();
   const {
     prompt,
-    referenceImageUrl,
     model = "kling3_0_turbo",
     aspectRatio = "9:16",
     duration = 5,
   } = body;
 
   try {
+    const sceneImageUrl = await generateSceneImage(prompt, aspectRatio);
+
+    const uploadId = await downloadAndUpload(sceneImageUrl);
+
     const safePrompt = prompt.replace(/"/g, '\\"').replace(/`/g, "\\`");
-    let imageFlag = "";
-
-    if (referenceImageUrl) {
-      const uploadId = await uploadImage(referenceImageUrl);
-      imageFlag = `--image ${uploadId}`;
-    }
-
-    const cmd = `${HF_CLI} generate create ${model} --prompt "${safePrompt}" ${imageFlag} --aspect_ratio "${aspectRatio}" --duration ${duration} --wait --json`;
+    const cmd = `${HF_CLI} generate create ${model} --prompt "${safePrompt}" --image ${uploadId} --aspect_ratio "${aspectRatio}" --duration ${duration} --wait --json`;
 
     const { stdout } = await execAsync(cmd, { timeout: 300000 });
-
     const results = JSON.parse(stdout);
+
     if (results.length > 0 && results[0].result_url) {
       return NextResponse.json({
         videoUrl: results[0].result_url,
+        sceneImageUrl,
         jobId: results[0].id,
         status: "completed",
       });

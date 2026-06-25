@@ -100,7 +100,6 @@ export function GenerateStep({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: scene.prompt,
-          referenceImageUrl: referenceImageUrl || undefined,
           model: "kling3_0_turbo",
           aspectRatio: "9:16",
           duration: Math.min(scene.duration, 10),
