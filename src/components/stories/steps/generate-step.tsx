@@ -70,18 +70,46 @@ export function GenerateStep({
     }
   }, []);
 
-  function generatePrompts() {
+  async function generatePrompts() {
     setIsGeneratingPrompts(true);
-    setTimeout(() => {
+    try {
+      const koreanTexts = scenes.map((s) => s.description);
+      const res = await fetch("/api/prompts/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ texts: koreanTexts }),
+      });
+      const { translated } = await res.json();
+
+      const translatedScenes = scenes.map((s, i) => ({
+        ...s,
+        description: s.description,
+        englishDescription: translated[i] || s.description,
+      }));
+
+      const withPrompts = buildAllEnglishPrompts(
+        translatedScenes.map((s) => ({
+          ...s,
+          description: s.englishDescription,
+        })),
+        project.atmosphere ?? "funny",
+        project.artStyle ?? "semi_realistic"
+      ).map((s, i) => ({
+        ...s,
+        description: koreanTexts[i],
+      }));
+
+      setScenes(withPrompts);
+    } catch {
       const withPrompts = buildAllEnglishPrompts(
         scenes,
         project.atmosphere ?? "funny",
         project.artStyle ?? "semi_realistic"
       );
       setScenes(withPrompts);
-      setPromptsGenerated(true);
-      setIsGeneratingPrompts(false);
-    }, 500);
+    }
+    setPromptsGenerated(true);
+    setIsGeneratingPrompts(false);
   }
 
   async function generateVideoForScene(scene: Scene, sceneIdx: number) {
