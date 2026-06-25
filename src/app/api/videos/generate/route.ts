@@ -35,22 +35,36 @@ async function downloadAndUpload(imageUrl: string): Promise<string> {
   }
 }
 
-async function runHfCommand(args: string[]): Promise<string> {
-  const scriptPath = join(tmpdir(), `hf_cmd_${Date.now()}.sh`);
-  const cmd = `${HF_CLI} ${args.join(" ")}`;
-  await writeFile(scriptPath, `#!/bin/bash\n${cmd}\n`, { mode: 0o755 });
+async function runHfCommand(args: string[], maxRetries = 2): Promise<string> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const scriptPath = join(tmpdir(), `hf_cmd_${Date.now()}.sh`);
+    const cmd = `${HF_CLI} ${args.join(" ")}`;
+    await writeFile(scriptPath, `#!/bin/bash\n${cmd}\n`, { mode: 0o755 });
 
-  try {
-    const { stdout, stderr } = await execAsync(`bash "${scriptPath}"`, {
-      timeout: 300000,
-    });
-    if (!stdout.trim() && stderr.trim()) {
-      throw new Error(stderr.trim());
+    try {
+      const { stdout, stderr } = await execAsync(`bash "${scriptPath}"`, {
+        timeout: 300000,
+      });
+      if (!stdout.trim() && stderr.trim()) {
+        throw new Error(stderr.trim());
+      }
+      return stdout;
+    } catch (error) {
+      await unlink(scriptPath).catch(() => {});
+      const msg = error instanceof Error ? error.message : "";
+      if (msg.includes("502") || msg.includes("503") || msg.includes("timeout")) {
+        if (attempt < maxRetries) {
+          console.log(`Retrying (${attempt + 1}/${maxRetries})...`);
+          await new Promise((r) => setTimeout(r, 3000 * (attempt + 1)));
+          continue;
+        }
+      }
+      throw error;
+    } finally {
+      await unlink(scriptPath).catch(() => {});
     }
-    return stdout;
-  } finally {
-    await unlink(scriptPath).catch(() => {});
   }
+  throw new Error("Max retries exceeded");
 }
 
 function cleanPromptForShell(prompt: string): string {
