@@ -22,7 +22,16 @@ import {
   Clock,
   Lightbulb,
   Plus,
+  Save,
+  FolderOpen,
+  X,
 } from "lucide-react";
+import {
+  getTemplates,
+  saveTemplate,
+  deleteTemplate,
+  type ScenarioTemplate,
+} from "@/lib/templates";
 import type { StoryProject, Scene } from "@/types";
 import { splitStoryIntoScenes } from "@/lib/prompts/scenario";
 
@@ -43,6 +52,9 @@ export function ScenarioStep({
   const [editingScene, setEditingScene] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [templates, setTemplates] = useState<ScenarioTemplate[]>([]);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   const targetDuration = project.targetDuration ?? 45;
 
@@ -141,6 +153,37 @@ export function ScenarioStep({
     setScenes((prev) => prev.filter((s) => s.id !== id));
   };
 
+  const handleSave = () => {
+    const name = prompt("시나리오 이름을 입력하세요:");
+    if (!name) return;
+    saveTemplate({
+      id: `tpl-${Date.now()}`,
+      name,
+      atmosphere: project.atmosphere ?? "funny",
+      artStyle: project.artStyle ?? "semi_realistic",
+      targetDuration,
+      scenes,
+      createdAt: new Date().toISOString(),
+    });
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 2000);
+  };
+
+  const handleLoadTemplates = () => {
+    setTemplates(getTemplates());
+    setShowTemplates(!showTemplates);
+  };
+
+  const applyTemplate = (tpl: ScenarioTemplate) => {
+    setScenes(tpl.scenes);
+    setShowTemplates(false);
+  };
+
+  const handleDeleteTemplate = (id: string) => {
+    deleteTemplate(id);
+    setTemplates(getTemplates());
+  };
+
   const handleNext = () => {
     onUpdate({ scenes });
     onNext();
@@ -172,15 +215,38 @@ export function ScenarioStep({
             맥락에 맞게 {scenes.length}개 씬으로 나눴어요
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={generateScenes}
-          className="gap-1.5"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-          재구성
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleLoadTemplates}
+            className="gap-1.5"
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSave}
+            className="gap-1.5"
+          >
+            {saveSuccess ? (
+              <Check className="h-3.5 w-3.5 text-green-500" />
+            ) : (
+              <Save className="h-3.5 w-3.5" />
+            )}
+            {saveSuccess ? "저장됨" : "저장"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={generateScenes}
+            className="gap-1.5"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            재구성
+          </Button>
+        </div>
       </div>
 
       <div className="flex items-center gap-3 text-sm">
@@ -198,6 +264,45 @@ export function ScenarioStep({
           </Badge>
         )}
       </div>
+
+      {showTemplates && (
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm">저장된 시나리오</CardTitle>
+              <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setShowTemplates(false)}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {templates.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-4 text-center">저장된 시나리오가 없습니다</p>
+            ) : (
+              <div className="space-y-2">
+                {templates.map((tpl) => (
+                  <div key={tpl.id} className="flex items-center justify-between rounded-lg border p-2">
+                    <button onClick={() => applyTemplate(tpl)} className="flex-1 text-left">
+                      <p className="text-xs font-medium">{tpl.name}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {tpl.scenes.length}씬 · {tpl.targetDuration}초 · {new Date(tpl.createdAt).toLocaleDateString("ko")}
+                      </p>
+                    </button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => handleDeleteTemplate(tpl.id)}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="space-y-3">
         {scenes.map((scene, index) => {

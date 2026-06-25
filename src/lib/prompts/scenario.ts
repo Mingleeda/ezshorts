@@ -231,19 +231,29 @@ export function buildAllEnglishPrompts(
 
   const narrativeRoles = getSceneLabels(scenes.length);
 
-  return scenes.map((scene, index) => ({
-    ...scene,
-    prompt: [
-      ART_STYLE_EN[artStyle],
-      `${ATMOSPHERE_EN[atmosphere]} mood`,
-      narrativeRoles[index],
-      `scene: ${scene.description}`,
-      "vertical 9:16 aspect ratio, high quality, 4K, detailed",
-      "maintain exact same character identity and appearance throughout all scenes",
-      "absolutely no text, no subtitles, no captions, no watermark, no words, no letters, no writing on screen",
-    ].join(", "),
-    promptTags: buildKoreanTags(scene.description, atmosphere, artStyle),
-  }));
+  return scenes.map((scene, index) => {
+    const existingTags = scene.promptTags.length > 0
+      ? scene.promptTags
+      : buildKoreanTags(scene.description, atmosphere, artStyle);
+
+    const customKeywords = existingTags
+      .filter((t) => !["코믹", "공포", "감동", "충격", "잔잔", "신남", "반실사", "애니", "3D", "일러스트", "시네마틱", "9:16"].includes(t));
+
+    return {
+      ...scene,
+      prompt: [
+        ART_STYLE_EN[artStyle],
+        `${ATMOSPHERE_EN[atmosphere]} mood`,
+        narrativeRoles[index],
+        `scene: ${scene.description}`,
+        ...(customKeywords.length > 0 ? [`keywords: ${customKeywords.join(", ")}`] : []),
+        "vertical 9:16 aspect ratio, high quality, 4K, detailed",
+        "maintain exact same character identity and appearance throughout all scenes",
+        "absolutely no text, no subtitles, no captions, no watermark, no words, no letters, no writing on screen",
+      ].join(", "),
+      promptTags: existingTags,
+    };
+  });
 }
 
 function getSceneLabels(count: number): string[] {

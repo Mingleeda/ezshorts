@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import type { StoryProject, Scene } from "@/types";
 import { buildAllEnglishPrompts } from "@/lib/prompts/scenario";
+import { EditableTags } from "@/components/shared/editable-tags";
 import type { WizardState } from "../stories-wizard";
 
 interface GenerateStepProps {
@@ -382,13 +383,17 @@ export function GenerateStep({
                   </div>
                 )}
 
-                <div className="flex flex-wrap gap-1">
-                  {scene.promptTags.map((tag) => (
-                    <Badge key={tag} variant="secondary" className="text-[10px] font-normal">
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
+                <EditableTags
+                  tags={scene.promptTags}
+                  onChange={(newTags) =>
+                    setScenes((prev) =>
+                      prev.map((s) =>
+                        s.id === scene.id ? { ...s, promptTags: newTags } : s
+                      )
+                    )
+                  }
+                  disabled={status === "generating"}
+                />
 
                 {expandedPrompt === scene.id && (
                   <div className="space-y-1">
