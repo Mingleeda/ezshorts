@@ -6,6 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Sparkles, ArrowRight } from "lucide-react";
+import { StoryGenerator } from "../story-generator";
 import type { StoryProject, Atmosphere } from "@/types";
 
 const atmospheres: { value: Atmosphere; label: string; emoji: string }[] = [
@@ -29,6 +30,8 @@ export function StoryInput({ project, onUpdate, onNext }: StoryInputProps) {
     project.atmosphere ?? "funny"
   );
 
+  const [showGenerator, setShowGenerator] = useState(false);
+
   const canProceed = text.trim().length >= 10;
 
   const handleNext = () => {
@@ -41,7 +44,7 @@ export function StoryInput({ project, onUpdate, onNext }: StoryInputProps) {
       <div>
         <h1 className="text-2xl font-bold mb-1">썰 쇼츠 만들기</h1>
         <p className="text-muted-foreground">
-          썰을 입력하면 AI가 영상으로 만들어드려요
+          썰을 입력하거나, AI가 만들어줄 수도 있어요
         </p>
       </div>
 
@@ -61,13 +64,25 @@ export function StoryInput({ project, onUpdate, onNext }: StoryInputProps) {
             <span className="text-xs text-muted-foreground">
               {text.length}자
             </span>
-            <Button variant="outline" size="sm" className="gap-1.5" disabled>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setShowGenerator(!showGenerator)}
+            >
               <Sparkles className="h-3.5 w-3.5" />
               AI로 썰 생성하기
             </Button>
           </div>
         </CardContent>
       </Card>
+
+      {showGenerator && (
+        <StoryGenerator
+          onGenerated={(story) => setText(story)}
+          onClose={() => setShowGenerator(false)}
+        />
+      )}
 
       <Card>
         <CardHeader>
