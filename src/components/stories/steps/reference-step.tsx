@@ -50,10 +50,14 @@ function buildCharacterPrompt(
     cinematic: "cinematic photography, dramatic lighting, 35mm film",
   };
   const style = artStyleEn[project.artStyle ?? "semi_realistic"];
-  const storyContext = project.storyText?.slice(0, 200) ?? "";
-  const custom = customDescription ? `, appearance details: ${customDescription}` : "";
+  const storyRaw = project.storyText ?? "";
+  const storyContext = storyRaw
+    .replace(/[""“”"''‘’'][^""“”"''‘’']*[""“”"''‘’']/g, "")
+    .replace(/[가-힣]+라고\s*(했|말했|외쳤|소리쳤)/g, "")
+    .slice(0, 150);
+  const custom = customDescription ? `, appearance: ${customDescription}` : "";
 
-  return `${style}, character portrait of "${characterName}" from this story: ${storyContext}${custom}. Single person portrait, clear face, upper body visible, simple clean background, vertical 9:16, high quality, 4K, absolutely no text, no subtitles, no captions, no watermark`;
+  return `${style}, character portrait of "${characterName}", story context: ${storyContext}${custom}. Single person portrait, clear face visible, upper body, simple clean background, vertical 9:16, high quality, 4K, photorealistic, absolutely no text anywhere, no subtitles, no captions, no watermark, no words, no letters, no writing, no Korean text, no title`;
 }
 
 interface ReferenceStepProps {
