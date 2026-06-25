@@ -185,7 +185,7 @@ export function GenerateStep({
         body: JSON.stringify({
           prompt: scene.prompt,
           referenceUploadId: wizardState.referenceUploadId || undefined,
-          model: "kling3_0_turbo",
+          model: "seedance_2_0",
           aspectRatio: "9:16",
           duration: Math.min(scene.duration, 10),
         }),
