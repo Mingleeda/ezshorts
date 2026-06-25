@@ -132,6 +132,9 @@ export function StoryGenerator({ onGenerated, onClose }: StoryGeneratorProps) {
       .join("\n");
 
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+
       const res = await fetch("https://text.pollinations.ai/openai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -146,16 +149,34 @@ export function StoryGenerator({ onGenerated, onClose }: StoryGeneratorProps) {
             { role: "user", content: prompt },
           ],
         }),
+        signal: controller.signal,
       });
-      const data = await res.json();
-      const story = data.choices?.[0]?.message?.content?.trim();
-      if (story) {
-        setGeneratedStory(story);
-      } else {
-        setGeneratedStory("썰 생성에 실패했습니다. 다시 시도해주세요.");
+
+      clearTimeout(timeout);
+
+      const text = await res.text();
+      try {
+        const data = JSON.parse(text);
+        const story = data.choices?.[0]?.message?.content?.trim();
+        if (story) {
+          setGeneratedStory(story);
+        } else {
+          setGeneratedStory(text.trim() || "응답을 파싱할 수 없습니다. 다시 시도해주세요.");
+        }
+      } catch {
+        if (text.trim()) {
+          setGeneratedStory(text.trim());
+        } else {
+          setGeneratedStory("빈 응답입니다. 다시 시도해주세요.");
+        }
       }
-    } catch {
-      setGeneratedStory("썰 생성에 실패했습니다. 다시 시도해주세요.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      setGeneratedStory(
+        msg.includes("abort")
+          ? "시간이 초과되었습니다. 다시 시도해주세요."
+          : "썰 생성에 실패했습니다. 다시 시도해주세요."
+      );
     }
     setIsGenerating(false);
   }
