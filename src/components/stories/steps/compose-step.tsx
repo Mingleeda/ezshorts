@@ -23,6 +23,9 @@ import {
   Trash2,
   GripVertical,
   Play,
+  Loader2,
+  Wand2,
+  Check,
 } from "lucide-react";
 import type { StoryProject } from "@/types";
 
@@ -49,6 +52,52 @@ export function ComposeStep({ project, videos, onBack }: ComposeStepProps) {
   const [subtitleEnabled, setSubtitleEnabled] = useState(true);
   const [narrationEnabled, setNarrationEnabled] = useState(true);
   const [bgmEnabled, setBgmEnabled] = useState(true);
+  const [isComposing, setIsComposing] = useState(false);
+  const [composedUrl, setComposedUrl] = useState<string | null>(null);
+  const [composeError, setComposeError] = useState<string | null>(null);
+
+  async function composeAll() {
+    setIsComposing(true);
+    setComposeError(null);
+    setComposedUrl(null);
+
+    try {
+      const res = await fetch("/api/videos/compose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clips: orderedVideos.map((v) => ({
+            videoUrl: v.videoUrl,
+            sceneId: v.sceneId,
+          })),
+          transition,
+          transitionDuration: 0.5,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "합성 실패");
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      setComposedUrl(url);
+    } catch (error) {
+      setComposeError(
+        error instanceof Error ? error.message : "합성 실패"
+      );
+    }
+    setIsComposing(false);
+  }
+
+  function downloadComposed() {
+    if (!composedUrl) return;
+    const a = document.createElement("a");
+    a.href = composedUrl;
+    a.download = "ezshorts_final.mp4";
+    a.click();
+  }
 
   const moveUp = (index: number) => {
     if (index === 0) return;
@@ -239,23 +288,77 @@ export function ComposeStep({ project, videos, onBack }: ComposeStepProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">미리보기 & 내보내기</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">합성 & 내보내기</CardTitle>
+            <Button
+              onClick={composeAll}
+              disabled={isComposing || orderedVideos.length === 0}
+              className="gap-1.5"
+            >
+              {isComposing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : composedUrl ? (
+                <Check className="h-4 w-4" />
+              ) : (
+                <Wand2 className="h-4 w-4" />
+              )}
+              {isComposing
+                ? "합성 중..."
+                : composedUrl
+                  ? "다시 합성"
+                  : "영상 합성하기"}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="mx-auto w-48 aspect-[9/16] rounded-lg bg-black flex items-center justify-center">
-            {orderedVideos.length > 0 ? (
-              <video
-                src={orderedVideos[0].videoUrl}
-                controls
-                className="w-full h-full object-cover rounded-lg"
-              />
-            ) : (
-              <Play className="h-8 w-8 text-white/40" />
-            )}
-          </div>
-          <p className="text-xs text-center text-muted-foreground">
-            합성 기능은 준비 중입니다. 개별 씬을 다운로드할 수 있습니다.
-          </p>
+          {composeError && (
+            <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+              {composeError}
+            </div>
+          )}
+
+          {isComposing && (
+            <div className="flex flex-col items-center py-8 gap-3">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="text-sm font-medium">씬을 하나로 합치는 중...</p>
+              <p className="text-xs text-muted-foreground">
+                {orderedVideos.length}개 클립 · {transition} 전환 적용
+              </p>
+            </div>
+          )}
+
+          {composedUrl && !isComposing && (
+            <div className="space-y-3">
+              <div className="mx-auto max-w-xs aspect-[9/16] rounded-lg bg-black overflow-hidden">
+                <video
+                  src={composedUrl}
+                  controls
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="flex justify-center">
+                <Button onClick={downloadComposed} className="gap-1.5">
+                  <Download className="h-4 w-4" />
+                  완성 영상 다운로드
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {!composedUrl && !isComposing && (
+            <div className="mx-auto w-48 aspect-[9/16] rounded-lg bg-black flex items-center justify-center">
+              {orderedVideos.length > 0 ? (
+                <video
+                  src={orderedVideos[0].videoUrl}
+                  controls
+                  className="w-full h-full object-cover rounded-lg"
+                />
+              ) : (
+                <Play className="h-8 w-8 text-white/40" />
+              )}
+            </div>
+          )}
+
           <div className="flex items-center justify-center gap-3">
             <Badge variant="outline">YouTube Shorts (9:16)</Badge>
             <Badge variant="outline">Instagram Reels (9:16)</Badge>
