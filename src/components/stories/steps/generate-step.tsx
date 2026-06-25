@@ -22,6 +22,7 @@ import {
 import type { StoryProject, Scene } from "@/types";
 import { buildAllEnglishPrompts } from "@/lib/prompts/scenario";
 import { EditableTags } from "@/components/shared/editable-tags";
+import { VoiceSetup } from "@/components/shared/voice-setup";
 import type { WizardState } from "../stories-wizard";
 
 interface GenerateStepProps {
@@ -265,6 +266,13 @@ export function GenerateStep({
               : "전체 생성"}
         </Button>
       </div>
+
+      <VoiceSetup
+        assignments={wizardState.voiceAssignments}
+        onChange={(assignments) =>
+          onWizardStateUpdate({ voiceAssignments: assignments })
+        }
+      />
 
       {isAnyGenerating && (
         <Card className="border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/30">

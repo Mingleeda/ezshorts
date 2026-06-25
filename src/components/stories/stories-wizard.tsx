@@ -25,6 +25,7 @@ export interface WizardState {
   referenceUploadId: string;
   generatedVideos: { sceneId: string; videoUrl: string; sceneImageUrl?: string }[];
   promptsGenerated: boolean;
+  voiceAssignments: { characterName: string; voiceId: string; voiceName: string; gender: string }[];
 }
 
 export function StoriesWizard() {
@@ -42,6 +43,7 @@ export function StoriesWizard() {
     referenceUploadId: "",
     generatedVideos: [],
     promptsGenerated: false,
+    voiceAssignments: [],
   });
 
   const goNext = () =>

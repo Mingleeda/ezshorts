@@ -17,6 +17,13 @@ export interface Project {
   updatedAt: Date;
 }
 
+export interface VoiceAssignment {
+  characterName: string;
+  voiceId: string;
+  voiceName: string;
+  gender: string;
+}
+
 export interface StoryProject extends Project {
   type: "stories";
   storyText: string;
@@ -25,6 +32,7 @@ export interface StoryProject extends Project {
   moodboard: MoodBoard;
   targetDuration: number;
   scenes: Scene[];
+  voiceAssignments?: VoiceAssignment[];
 }
 
 export interface SeriesProject extends Project {
